@@ -1,6 +1,9 @@
 import numpy as np
 from enum import Enum
+from copy import copy
+from collections import deque
 
+#game globals
 class Resource(Enum):
     BRICK =  0
     WOOD =  1
@@ -26,7 +29,7 @@ class Direction():
     NRS = -RS
     NSQ = -SQ
 
-
+#game entitiess
 class Entity:
     def __init__(self, coords: np.ndarray, index: int):
         self.coords = coords
@@ -38,10 +41,17 @@ class Node(Entity):
         Direction.R,
         Direction.S
     ]
+    EDGE_OFFSETS = [
+        Direction.Q // 2,
+        Direction.R // 2,
+        Direction.S // 2
+    ]
     def __init__(self, coords, index):
         super().__init__(coords, index)
         self.player = None
         self.value = 0
+
+        self.available = True
 
         if np.all(self.coords % 6 == 2):
             self.top = True
@@ -50,7 +60,7 @@ class Node(Entity):
         else:
             raise ValueError(f'Invalid node coordinates: {self.coords}')
     
-    def place_structure(self, player, value):
+    def place_structure(self, player: str, value: int):
         self.player = player
         self.value = value
 
@@ -60,6 +70,11 @@ class Node(Entity):
         else:
             return [self.coords + offset for offset in Node.NODE_OFFSETS]
 
+    def adj_edge_coords(self):
+        if self.top:
+            return [self.coords - offset for offset in Node.EDGE_OFFSETS]
+        else:
+            return [self.coords + offset for offset in Node.EDGE_OFFSETS]
 
 
 class Edge(Entity):
@@ -67,6 +82,11 @@ class Edge(Entity):
         Direction.RS,
         Direction.SQ,
         Direction.QR,
+    ]
+    NODE_OFFSETS = [
+        Direction.Q // 2,
+        Direction.R // 2,
+        Direction.S // 2
     ]
     def __init__(self, coords, index):
         super().__init__(coords, index)
@@ -76,7 +96,7 @@ class Edge(Entity):
         assert len(i[0]) == 1, f'Invalid edge coordinates: {self.coords}'
         self.dir = i[0][0]
 
-    def place_road(self, player):
+    def place_road(self, player: str):
         self.player = player
 
     def adj_edge_coords(self):
@@ -88,13 +108,29 @@ class Edge(Entity):
             adj_coords.append(self.coords - offset)
         
         return adj_coords
+    
+    def adj_node_coords(self):
+        return [
+            self.coords + Edge.NODE_OFFSETS[self.dir],
+            self.coords - Edge.NODE_OFFSETS[self.dir]
+        ]
+
 
 class Tile(Entity):
-    def __init__(self, coords, index, resource, number):
+    def __init__(self, coords, index, resource: Resource, number: int):
         super().__init__(coords, index)
         self.resource = resource
         self.number = number
 
+class Port(Entity):
+    def __init__(self, coords, index, resource: Resource, dirs: tuple[np.ndarray]):
+        super().__init__(coords, index)
+        self.resource = resource
+        self.dirs = dirs
+
+        self.rate = 3 if self.resource is None else 2
+
+#game board
 class Board:
     BOARD_SIZE = 3
     TILE_OFFSETS = [
@@ -121,11 +157,31 @@ class Board:
         Direction.S,
         Direction.NR
     ]
+    PORT_DIRS = [
+        (Direction.NQ, Direction.R),
+        (Direction.S, Direction.NQ),
+        (Direction.NR, Direction.S),
+        (Direction.Q, Direction.NR),
+        (Direction.NS, Direction.Q),
+        (Direction.R, Direction.NS)
+    ]
     RESOURCES = [Resource.BRICK] * 3 + [Resource.WOOD] * 4 + [Resource.WOOL] * 4 \
         + [Resource.WHEAT] * 4 + [Resource.ORE] * 3
     NUMBERS = [
         2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12
     ]
+    PORTS = [
+        [
+            (0, None), (2, Resource.WOOL),
+            (1, None),
+            (0, None), (2, Resource.BRICK),
+            (1, Resource.WOOD),
+            (0, None), (2, Resource.WHEAT),
+            (1, Resource.ORE)
+        ]
+    ]
+
+    adj_lists_set = False
 
     def __init__(self, seed=None):
         #randomly initialize tile and number lists
@@ -135,13 +191,16 @@ class Board:
         self.build_dicts()
         self.build_adj_lists()
         
-
+    #randomly generate a new board
     def generate_board(self):
         np.random.seed(self.seed)
         resources = np.array(Board.RESOURCES)
         numbers = np.array(Board.NUMBERS)
+        port_data = copy(Board.PORTS)
+
         np.random.shuffle(resources)
         np.random.shuffle(numbers)
+        np.random.shuffle(port_data)
 
         desert_idx = np.random.randint(19)
         resources = np.insert(resources, desert_idx, Resource.DESERT)
@@ -171,6 +230,7 @@ class Board:
             for i, tile_offset in enumerate(Board.TILE_OFFSETS):
                 for j in range(rad):
                     cur_tile_coords += tile_offset
+                    #place tile
                     self.tiles.append(Tile(
                         cur_tile_coords.copy(),
                         tile_idx,
@@ -191,48 +251,226 @@ class Board:
                             cur_tile_coords + Board.NODE_OFFESTS[k % 6], node_idx,
                         ))
                         node_idx += 1
+        #end for
 
+        #add ports
+        self.ports: list[Port] = []
+        port_idx = 0
+        cur_tile_coords = Direction.QR * 2 * 3
+        for i, tile_offset in enumerate(Board.TILE_OFFSETS):
+            for port_pos, port_resource in port_data[i]:
+                self.ports.append(Port(
+                    cur_tile_coords + tile_offset * port_pos,
+                    port_idx,
+                    port_resource,
+                    Board.PORT_DIRS[i if port_pos != 2 else (i + 1) % 6]
+                ))
+                port_idx += 1
+        
+
+    #dicts for fast access
+    #dicts take a custom hash of the coords
     def build_dicts(self):
         self.tile_dict = dict()
         self.edge_dict = dict()
         self.node_dict = dict()
-
+    
         for tile in self.tiles:
-            self.tile_dict[Board.coords_hash(tile.coords)] = tile.index
+            self.tile_dict[Board.coords_hash(tile.coords)] = tile
         for edge in self.edges:
-            self.edge_dict[Board.coords_hash(edge.coords)] = edge.index
+            self.edge_dict[Board.coords_hash(edge.coords)] = edge
         for node in self.nodes:
-            self.node_dict[Board.coords_hash(node.coords)] = node.index
+            self.node_dict[Board.coords_hash(node.coords)] = node
 
+        self.node_port_dict = dict()
+        for port in self.ports:
+            for dir in port.dirs:
+                self.node_port_dict[Board.coords_hash(port.coords + dir)] = port
+
+    #build adjacency lists for fast access
+    #these will always be the same between games so they are saved between instances of Board
     def build_adj_lists(self):
-        self.edge_adj_list = []
+        if Board.adj_lists_set:
+            return
+        
+        Board.edge_edge_list = []
         for edge in self.edges:
             adj = []
             for coords in edge.adj_edge_coords():
                 hash = Board.coords_hash(coords)
                 if hash in self.edge_dict.keys():
-                    adj.append(self.edge_dict[hash])
+                    adj.append(self.edge_dict[hash].index)
             
-            self.edge_adj_list.append(adj)
+            Board.edge_edge_list.append(adj)
                     
-        self.node_adj_list = []
+        Board.node_node_list: list[list[int]] = []
         for node in self.nodes:
             adj = []
             for coords in node.adj_node_coords():
                 hash = Board.coords_hash(coords)
                 if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash])
-            self.node_adj_list.append(adj)
-        
-    def place_structure(self, coords, player, value):
-        node_idx = self.node_dict[Board.coords_hash(coords)]
-        self.nodes[node_idx].place_structure(player, value)
+                    adj.append(self.node_dict[hash].index)
+            Board.node_node_list.append(adj)
 
+        Board.node_edge_list: list[list[int]] = []
+        for node in self.nodes:
+            adj = []
+            for coords in node.adj_edge_coords():
+                hash = Board.coords_hash(coords)
+                if hash in self.edge_dict.keys():
+                    adj.append(self.edge_dict[hash].index)
+            Board.node_edge_list.append(adj)
+
+        Board.edge_node_list: list[list[int]] = []
+        for edge in self.edges:
+            adj = []
+            for coords in edge.adj_node_coords():
+                hash = Board.coords_hash(coords)
+                if hash in self.node_dict.keys():
+                    adj.append(self.node_dict[hash].index)
+            Board.edge_node_list.append(adj)
+        
+        Board.adj_lists_set = True
+
+        
+    def place_structure(self, coords, player, value, starting=False):
+        node: Node = self.node_dict.get(Board.coords_hash(coords))
+        if node is None:
+            return False
+        if not node.available:
+            return False
+        if not starting:
+            has_road = False
+            for adj_idx in Board.node_edge_list[node.index]:
+                if self.edges[adj_idx].player == player:
+                    has_road = True
+                    break
+            if not has_road:
+                return False
+        node.place_structure(player, value)
+        for adj_idx in Board.node_node_list[node.index]:
+            self.nodes[adj_idx].available = False
+        node.available = False
+        return True
+    
     def place_road(self, coords, player):
-        edge_idx = self.edge_dict[Board.coords_hash(coords)]
-        self.edges[edge_idx].place_road(player)
+        edge: Edge = self.edge_dict.get(Board.coords_hash(coords))
+        if edge is None:
+            return False
+        if edge.player:
+            return False
+        #must place a road from an existing settlement or road,
+        #road must not go through another players settlement
+        
+        
+
+        return True
 
     @staticmethod
     def coords_hash(coords):
         return coords[0] * 256 + coords[1]
+
+class ActionType(Enum):
+    structure = 0
+    road = 1
+    play_dev = 2
+    buy_dev = 3
+    roll = 4
+
+    trade = 5
+
+class GameAction:
+    def __init__(self, type: ActionType):
+        self.type = type
+
+class StructureAction(GameAction):
+    def __init__(self, coords, value):
+        super().__init__(ActionType.structure)
+        self.coords = coords
+        self.value = value
+
+class RoadAction(GameAction):
+    def __init__(self, coords):
+        super().__init__(ActionType.road)
+        self.coords = coords
+
+class DevType(Enum):
+    knight = 0
+    monopoly = 1
+    road_build = 2
+    invention = 3
+
+    victory_point = 4
+
+class PlayDevAction(GameAction):
+    def __init__(self, dev_type: DevType):
+        super().__init__(ActionType.play_dev)
+        self.dev_type = dev_type
+
+class BuyDevAction(GameAction):
+    def __init__(self):
+        super().__init__(ActionType.buy_dev)
+
+class RollAction(GameAction):
+    def __init__(self):
+        super().__init__(ActionType.roll)
+
+
+class Game:
+    def __init__(self, players: list[str], seed=None):
+        self.players = players
+        self.seed = seed
+
+        self.board = Board(seed=seed)
+        self.cur_player = self.players[0]
+        self.cur_player_idx = 0
+        #start, prod, or action
+        self.step_fn = self.step_start
+
+        self.action_queue = deque([ActionType.structure, ActionType.road] * len(players))
+
+        self.bank_trade_rates = dict()
+        for player in players:
+            self.bank_trade_rates[player] = dict()
+            for resource in Resource:
+                self.bank_trade_rates[player][resource] = 4
+        
     
+    def step(self, *args):
+        self.step_fn(args)
+
+    def step_start(self, action: GameAction):
+        if action.type != self.action_queue[0]:
+            #invalid action, returns false
+            return False
+        if action.type == ActionType.structure:
+            if action.value != 1:
+                return False
+            return self.place_structure(self, action, starting=True)
+        if action.type == ActionType.road:
+            pass
+        
+        #success
+
+    def place_structure(self, action: StructureAction, starting=False):
+        r = self.board.place_structure(action.coords, self.cur_player, action.value, starting=starting)
+        if not r:
+            return False
+        port: Port = self.board.node_port_dict.get(Board.coords_hash(action.coords), None)
+        if port is not None:
+            if port.resource is None:
+                for res in Resource:
+                    self.bank_trade_rates[self.players][res] = min(3, self.bank_trade_rates[self.players][res])
+            else:
+                self.bank_trade_rates[self.players][port.resource] = 2
+    
+    def place_road(self, action: RoadAction):
+        r = self.board.place_road(action.coords, self.cur_player)
+        if not r:
+            return False
+        
+                
+    def advance_player(self):
+        self.cur_player_idx += 1
+        self.cur_player_idx %= len(self.players)
+        self.cur_player = self.players[self.cur_player]
