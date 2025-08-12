@@ -464,6 +464,10 @@ class Game:
 
         self.action_queue = deque([ActionType.structure, ActionType.road] * len(players))
 
+        # turn state
+        self.has_rolled = False
+        self.actions_log: list[tuple] = []
+
         self.bank_trade_rates = dict()
         for player in players:
             self.bank_trade_rates[player] = dict()
@@ -521,3 +525,4 @@ class Game:
         self.cur_player_idx += 1
         self.cur_player_idx %= len(self.players)
         self.cur_player = self.players[self.cur_player_idx]
+        self.has_rolled = False
