@@ -485,9 +485,8 @@ class Game:
             ok = self.place_structure(action, starting=True)
             if not ok:
                 return False
-            # Advance initial queue and player after successful action
+            # In initial phase, same player places a road after settlement
             self.action_queue.popleft()
-            self.advance_player()
             return True
         if action.type == ActionType.road:
             ok = self.place_road(action)
