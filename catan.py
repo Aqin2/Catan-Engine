@@ -170,15 +170,15 @@ class Board:
     NUMBERS = [
         2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12
     ]
+    # Ports are defined per outer side (6 sides). Each tuple is (position along side, resource or None for 3:1)
+    # This distribution yields 9 ports total across the ring.
     PORTS = [
-        [
-            (0, None), (2, Resource.WOOL),
-            (1, None),
-            (0, None), (2, Resource.BRICK),
-            (1, Resource.WOOD),
-            (0, None), (2, Resource.WHEAT),
-            (1, Resource.ORE)
-        ]
+        [(0, None), (2, Resource.WOOL)],          # Side 0
+        [(1, None)],                               # Side 1
+        [(0, None), (2, Resource.BRICK)],         # Side 2
+        [(1, Resource.WOOD)],                      # Side 3
+        [(0, None), (2, Resource.WHEAT)],         # Side 4
+        [(1, Resource.ORE)],                       # Side 5
     ]
 
     adj_lists_set = False
@@ -204,7 +204,8 @@ class Board:
 
         desert_idx = np.random.randint(19)
         resources = np.insert(resources, desert_idx, Resource.DESERT)
-        numbers = np.insert(resources, desert_idx, -1)
+        # Insert robber placeholder number for the desert tile
+        numbers = np.insert(numbers, desert_idx, -1)
         
         #add initial tiles, edges and nodes
         cur_tile_coords = np.array([0, 0, 0])
@@ -362,8 +363,42 @@ class Board:
         #must place a road from an existing settlement or road,
         #road must not go through another players settlement
         
+        # Determine the two nodes this edge connects
+        node_indices = Board.edge_node_list[edge.index]
+        connected_nodes: list[Node] = [self.nodes[i] for i in node_indices]
         
+        # A node with an opponent settlement blocks connectivity through that node
+        def node_blocked(n: Node) -> bool:
+            return n.player is not None and n.player != player
 
+        # Check if this road is connected to player's existing structure or road
+        def connected_via_node(n: Node) -> bool:
+            # Directly connected to own settlement/city
+            if n.player == player:
+                return True
+            # Otherwise, check for adjacent player's road that shares this node
+            for adj_edge_idx in Board.node_edge_list[n.index]:
+                if adj_edge_idx == edge.index:
+                    continue
+                if self.edges[adj_edge_idx].player == player:
+                    # Ensure we are not passing through an opponent settlement at this node
+                    if not node_blocked(n):
+                        return True
+            return False
+
+        # It is valid if there exists at least one node that is not blocked by opponent
+        # and provides a connection (own building or own road)
+        is_connected = False
+        for n in connected_nodes:
+            if node_blocked(n):
+                continue
+            if connected_via_node(n):
+                is_connected = True
+                break
+        if not is_connected:
+            return False
+
+        edge.place_road(player)
         return True
 
     @staticmethod
@@ -437,7 +472,8 @@ class Game:
         
     
     def step(self, *args):
-        self.step_fn(args)
+        # Forward the action to current step function
+        return self.step_fn(*args)
 
     def step_start(self, action: GameAction):
         if action.type != self.action_queue[0]:
@@ -446,9 +482,20 @@ class Game:
         if action.type == ActionType.structure:
             if action.value != 1:
                 return False
-            return self.place_structure(self, action, starting=True)
+            ok = self.place_structure(action, starting=True)
+            if not ok:
+                return False
+            # Advance initial queue and player after successful action
+            self.action_queue.popleft()
+            self.advance_player()
+            return True
         if action.type == ActionType.road:
-            pass
+            ok = self.place_road(action)
+            if not ok:
+                return False
+            self.action_queue.popleft()
+            self.advance_player()
+            return True
         
         #success
 
@@ -460,17 +507,18 @@ class Game:
         if port is not None:
             if port.resource is None:
                 for res in Resource:
-                    self.bank_trade_rates[self.players][res] = min(3, self.bank_trade_rates[self.players][res])
+                    self.bank_trade_rates[self.cur_player][res] = min(3, self.bank_trade_rates[self.cur_player][res])
             else:
-                self.bank_trade_rates[self.players][port.resource] = 2
+                self.bank_trade_rates[self.cur_player][port.resource] = 2
+        return True
     
     def place_road(self, action: RoadAction):
         r = self.board.place_road(action.coords, self.cur_player)
         if not r:
             return False
-        
+        return True
                 
     def advance_player(self):
         self.cur_player_idx += 1
         self.cur_player_idx %= len(self.players)
-        self.cur_player = self.players[self.cur_player]
+        self.cur_player = self.players[self.cur_player_idx]
