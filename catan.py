@@ -467,12 +467,22 @@ class Game:
         # turn state
         self.has_rolled = False
         self.actions_log: list[tuple] = []
+        self.move_robber_pending = False
 
         self.bank_trade_rates = dict()
         for player in players:
             self.bank_trade_rates[player] = dict()
             for resource in Resource:
                 self.bank_trade_rates[player][resource] = 4
+
+        # player resources (exclude DESERT)
+        self.player_resources: dict[str, dict[Resource, int]] = {
+            p: {r: 0 for r in Resource if r != Resource.DESERT} for p in players
+        }
+
+        # robber starts on desert tile
+        desert_tiles = [t for t in self.board.tiles if t.resource == Resource.DESERT]
+        self.robber_coords = desert_tiles[0].coords if desert_tiles else self.board.tiles[0].coords
         
     
     def step(self, *args):
@@ -526,3 +536,4 @@ class Game:
         self.cur_player_idx %= len(self.players)
         self.cur_player = self.players[self.cur_player_idx]
         self.has_rolled = False
+        self.move_robber_pending = False

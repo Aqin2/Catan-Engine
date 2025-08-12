@@ -261,7 +261,7 @@ def compute_current_playable_actions(game: Game) -> List[Any]:
 
 
 def serialize_game(game: Game) -> Dict[str, Any]:
-    tiles, robber_coordinate = serialize_tiles(game.board)
+    tiles, _robber_from_tiles = serialize_tiles(game.board)
     player_to_color = map_players_to_colors(game.players)
     colors = [player_to_color[p] for p in game.players]
     current_color = player_to_color[game.cur_player]
@@ -273,6 +273,23 @@ def serialize_game(game: Game) -> Dict[str, Any]:
 
     current_playable_actions = compute_current_playable_actions(game)
 
+    # Build player_state with resource counts and flags
+    player_state: Dict[str, Any] = {}
+    for idx, player in enumerate(game.players):
+        key = f"P{idx}"
+        # resources
+        for res in ["WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"]:
+            player_state[f"{key}_{res}_IN_HAND"] = 0
+        # dev and flags defaults
+        player_state[f"{key}_VICTORY_POINT_IN_HAND"] = 0
+        player_state[f"{key}_KNIGHT_IN_HAND"] = 0
+        player_state[f"{key}_MONOPOLY_IN_HAND"] = 0
+        player_state[f"{key}_YEAR_OF_PLENTY_IN_HAND"] = 0
+        player_state[f"{key}_ROAD_BUILDING_IN_HAND"] = 0
+        player_state[f"{key}_HAS_ROLLED"] = game.has_rolled if player == game.cur_player else False
+
+    robber_coordinate = [int(game.robber_coords[0]), int(game.robber_coords[1]), int(game.robber_coords[2])]
+
     game_state: Dict[str, Any] = {
         "tiles": tiles,
         "adjacent_tiles": {},  # optional, not used by UI now
@@ -281,11 +298,11 @@ def serialize_game(game: Game) -> Dict[str, Any]:
         "current_color": current_color,
         "winning_color": None,
         "current_prompt": (
-            "PLAY_TURN" if len(game.action_queue) == 0 and not game.has_rolled else (
-                "MOVE_ROBBER" if False else "PLAY_TURN"
-            )
-        ) if len(game.action_queue) == 0 else "START_PLACEMENT",
-        "player_state": {},
+            "START_PLACEMENT"
+            if len(game.action_queue) > 0
+            else ("MOVE_ROBBER" if game.move_robber_pending else "PLAY_TURN")
+        ),
+        "player_state": player_state,
         "actions": getattr(game, "actions_log", []),
         "robber_coordinate": robber_coordinate,
         "nodes": nodes,
