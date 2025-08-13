@@ -2,6 +2,7 @@ from flask import jsonify, request
 from catanatron.web import app, db
 import uuid
 from typing import Dict, List, Tuple, Any
+import random
 
 # Import the game logic
 from catan import Resource, Board, Game, Node, Edge
@@ -34,6 +35,17 @@ def resource_to_str(res: Resource) -> str:
     if res == Resource.DESERT:
         return "DESERT"
     raise ValueError(f"Unknown resource: {res}")
+
+
+def str_to_resource(name: str) -> Resource:
+    mapping = {
+        "BRICK": Resource.BRICK,
+        "WOOD": Resource.WOOD,
+        "SHEEP": Resource.WOOL,
+        "WHEAT": Resource.WHEAT,
+        "ORE": Resource.ORE,
+    }
+    return mapping[name]
 
 
 def serialize_tiles(board: Board) -> Tuple[List[Dict[str, Any]], List[int]]:
@@ -234,6 +246,115 @@ def _edge_valid_for_player(board: Board, edge: Edge, player: str) -> bool:
 def compute_current_playable_actions(game: Game) -> List[Any]:
     actions: List[Any] = []
     if len(game.action_queue) == 0:
+        # main turn
+        color = map_players_to_colors(game.players)[game.cur_player]
+        if game.move_robber_pending:
+            # Allow selecting robber destination
+            for t in game.board.tiles:
+                coord = [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])]
+                if coord == [int(game.robber_coords[0]), int(game.robber_coords[1]), int(game.robber_coords[2])]:
+                    continue
+                actions.append([color, "MOVE_ROBBER", [coord, None, None]])
+            return actions
+        if not game.has_rolled:
+            actions.append([color, "ROLL", None])
+        else:
+            # Build options based on resources and stocks
+            # Roads
+            for e in game.board.edges:
+                if not _edge_valid_for_player(game.board, e, game.cur_player):
+                    continue
+                # Check pieces and resources or free roads
+                if game.player_pieces[game.cur_player]["roads"] <= 0:
+                    break
+                have_free = game.free_roads_remaining[game.cur_player] > 0
+                have_res = (
+                    game.player_resources[game.cur_player][Resource.WOOD] >= 1
+                    and game.player_resources[game.cur_player][Resource.BRICK] >= 1
+                )
+                if not (have_free or have_res):
+                    pass
+                else:
+                    for t in game.board.tiles:
+                        delta = e.coords - t.coords
+                        for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
+                            if (delta == off).all():
+                                actions.append([
+                                    color,
+                                    "BUILD_ROAD",
+                                    [int(t.index), int(dir_idx)],
+                                ])
+                                break
+                        else:
+                            continue
+                        break
+
+            # Settlements
+            if game.player_pieces[game.cur_player]["settlements"] > 0:
+                for n in game.board.nodes:
+                    if not n.available:
+                        continue
+                    # Must be connected to own road
+                    connected = False
+                    for adj_edge_idx in Board.node_edge_list[n.index]:
+                        if game.board.edges[adj_edge_idx].player == game.cur_player:
+                            connected = True
+                            break
+                    if not connected:
+                        continue
+                    have_res = (
+                        game.player_resources[game.cur_player][Resource.WOOD] >= 1
+                        and game.player_resources[game.cur_player][Resource.BRICK] >= 1
+                        and game.player_resources[game.cur_player][Resource.WHEAT] >= 1
+                        and game.player_resources[game.cur_player][Resource.WOOL] >= 1
+                    )
+                    if have_res:
+                        actions.append([color, "BUILD_SETTLEMENT", int(n.index)])
+
+            # Cities
+            if game.player_pieces[game.cur_player]["cities"] > 0:
+                for n in game.board.nodes:
+                    if n.player == game.cur_player and getattr(n, "value", 0) == 1:
+                        have_res = (
+                            game.player_resources[game.cur_player][Resource.WHEAT] >= 2
+                            and game.player_resources[game.cur_player][Resource.ORE] >= 3
+                        )
+                        if have_res:
+                            actions.append([color, "BUILD_CITY", int(n.index)])
+
+            # Buy development card
+            if (
+                game.player_resources[game.cur_player][Resource.WHEAT] >= 1
+                and game.player_resources[game.cur_player][Resource.WOOL] >= 1
+                and game.player_resources[game.cur_player][Resource.ORE] >= 1
+            ):
+                actions.append([color, "BUY_DEVELOPMENT_CARD", None])
+
+            # Play dev cards if owned (presence enables UI menus; selection will be sent later)
+            if game.player_devs_in_hand[game.cur_player]["KNIGHT"] > 0:
+                actions.append([color, "PLAY_KNIGHT_CARD", None])
+            if game.player_devs_in_hand[game.cur_player]["ROAD_BUILDING"] > 0:
+                actions.append([color, "PLAY_ROAD_BUILDING", None])
+            if game.player_devs_in_hand[game.cur_player]["YEAR_OF_PLENTY"] > 0:
+                actions.append([color, "PLAY_YEAR_OF_PLENTY", None])
+            if game.player_devs_in_hand[game.cur_player]["MONOPOLY"] > 0:
+                actions.append([color, "PLAY_MONOPOLY", None])
+
+            # Maritime trades based on current bank rates
+            res_list = [Resource.WOOD, Resource.BRICK, Resource.WOOL, Resource.WHEAT, Resource.ORE]
+            pr = game.player_resources[game.cur_player]
+            for give in res_list:
+                rate = game.bank_trade_rates[game.cur_player][give]
+                if pr[give] >= rate:
+                    for receive in res_list:
+                        # Build 5-tuple arg for UI humanizer: up to 4 gives + 1 receive
+                        gives = [resource_to_str(give)] * min(rate, 4)
+                        while len(gives) < 4:
+                            gives.append(None)
+                        actions.append([color, "MARITIME_TRADE", gives + [resource_to_str(receive)]])
+
+            # End turn always available after roll
+            actions.append([color, "END_TURN", None])
         return actions
 
     player_to_color = map_players_to_colors(game.players)
@@ -277,18 +398,47 @@ def serialize_game(game: Game) -> Dict[str, Any]:
     player_state: Dict[str, Any] = {}
     for idx, player in enumerate(game.players):
         key = f"P{idx}"
-        # resources
-        for res in ["WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"]:
-            player_state[f"{key}_{res}_IN_HAND"] = 0
+        # resources from engine
+        player_state[f"{key}_WOOD_IN_HAND"] = game.player_resources[player][Resource.WOOD]
+        player_state[f"{key}_BRICK_IN_HAND"] = game.player_resources[player][Resource.BRICK]
+        player_state[f"{key}_SHEEP_IN_HAND"] = game.player_resources[player][Resource.WOOL]
+        player_state[f"{key}_WHEAT_IN_HAND"] = game.player_resources[player][Resource.WHEAT]
+        player_state[f"{key}_ORE_IN_HAND"] = game.player_resources[player][Resource.ORE]
         # dev and flags defaults
-        player_state[f"{key}_VICTORY_POINT_IN_HAND"] = 0
-        player_state[f"{key}_KNIGHT_IN_HAND"] = 0
-        player_state[f"{key}_MONOPOLY_IN_HAND"] = 0
-        player_state[f"{key}_YEAR_OF_PLENTY_IN_HAND"] = 0
-        player_state[f"{key}_ROAD_BUILDING_IN_HAND"] = 0
+        player_state[f"{key}_VICTORY_POINT_IN_HAND"] = game.player_devs_in_hand[player]["VICTORY_POINT"]
+        player_state[f"{key}_KNIGHT_IN_HAND"] = game.player_devs_in_hand[player]["KNIGHT"]
+        player_state[f"{key}_MONOPOLY_IN_HAND"] = game.player_devs_in_hand[player]["MONOPOLY"]
+        player_state[f"{key}_YEAR_OF_PLENTY_IN_HAND"] = game.player_devs_in_hand[player]["YEAR_OF_PLENTY"]
+        player_state[f"{key}_ROAD_BUILDING_IN_HAND"] = game.player_devs_in_hand[player]["ROAD_BUILDING"]
         player_state[f"{key}_HAS_ROLLED"] = game.has_rolled if player == game.cur_player else False
 
     robber_coordinate = [int(game.robber_coords[0]), int(game.robber_coords[1]), int(game.robber_coords[2])]
+
+    # Compute victory points and winning color
+    def compute_vp_for(player: str) -> int:
+        vp = 0
+        # settlements and cities
+        for n in game.board.nodes:
+            if n.player == player:
+                if getattr(n, "value", 0) == 1:
+                    vp += 1
+                elif getattr(n, "value", 0) == 2:
+                    vp += 2
+        # dev VP
+        vp += game.player_devs_in_hand[player]["VICTORY_POINT"]
+        # awards
+        if getattr(game, "largest_army_owner", None) == player:
+            vp += 2
+        if getattr(game, "longest_road_owner", None) == player:
+            vp += 2
+        return vp
+
+    player_to_color = map_players_to_colors(game.players)
+    winning_color = None
+    for p in game.players:
+        if compute_vp_for(p) >= 10:
+            winning_color = player_to_color[p]
+            break
 
     game_state: Dict[str, Any] = {
         "tiles": tiles,
@@ -296,7 +446,7 @@ def serialize_game(game: Game) -> Dict[str, Any]:
         "bot_colors": bot_colors,
         "colors": colors,
         "current_color": current_color,
-        "winning_color": None,
+        "winning_color": winning_color,
         "current_prompt": (
             "START_PLACEMENT"
             if len(game.action_queue) > 0
@@ -369,7 +519,28 @@ def post_action(game_id):
             node = game.board.nodes[arg]
         except Exception:
             return jsonify({"error": "invalid node id"}), 400
-        ok = game.step(StructureAction(coords=node.coords, value=1))
+        # initial placements are free
+        if len(game.action_queue) > 0:
+            ok = game.step(StructureAction(coords=node.coords, value=1))
+        else:
+            # check resources and pieces
+            pr = game.player_resources[game.cur_player]
+            if (
+                game.player_pieces[game.cur_player]["settlements"] > 0
+                and pr[Resource.WOOD] >= 1
+                and pr[Resource.BRICK] >= 1
+                and pr[Resource.WHEAT] >= 1
+                and pr[Resource.WOOL] >= 1
+            ):
+                ok = game.board.place_structure(node.coords, game.cur_player, 1, starting=False)
+                if ok:
+                    pr[Resource.WOOD] -= 1
+                    pr[Resource.BRICK] -= 1
+                    pr[Resource.WHEAT] -= 1
+                    pr[Resource.WOOL] -= 1
+                    game.player_pieces[game.cur_player]["settlements"] -= 1
+            else:
+                ok = False
     elif kind == "BUILD_ROAD" and isinstance(arg, list) and len(arg) == 2:
         tile_idx, dir_idx = arg
         try:
@@ -377,19 +548,197 @@ def post_action(game_id):
             coords = t.coords + Board.EDGE_OFFSETS[int(dir_idx)]
         except Exception:
             return jsonify({"error": "invalid edge id"}), 400
-        ok = game.step(RoadAction(coords=coords))
+        # initial placement free
+        if len(game.action_queue) > 0:
+            ok = game.step(RoadAction(coords=coords))
+        else:
+            have_free = game.free_roads_remaining[game.cur_player] > 0
+            pr = game.player_resources[game.cur_player]
+            have_res = pr[Resource.WOOD] >= 1 and pr[Resource.BRICK] >= 1
+            if game.player_pieces[game.cur_player]["roads"] > 0 and (have_free or have_res):
+                ok = game.board.place_road(coords, game.cur_player)
+                if ok:
+                    if have_free:
+                        game.free_roads_remaining[game.cur_player] -= 1
+                    else:
+                        pr[Resource.WOOD] -= 1
+                        pr[Resource.BRICK] -= 1
+                    game.player_pieces[game.cur_player]["roads"] -= 1
+            else:
+                ok = False
+    elif kind == "BUILD_CITY" and isinstance(arg, int):
+        try:
+            node = game.board.nodes[arg]
+        except Exception:
+            return jsonify({"error": "invalid node id"}), 400
+        if (
+            node.player == game.cur_player
+            and getattr(node, "value", 0) == 1
+            and game.player_pieces[game.cur_player]["cities"] > 0
+            and game.player_resources[game.cur_player][Resource.WHEAT] >= 2
+            and game.player_resources[game.cur_player][Resource.ORE] >= 3
+        ):
+            node.value = 2
+            game.player_resources[game.cur_player][Resource.WHEAT] -= 2
+            game.player_resources[game.cur_player][Resource.ORE] -= 3
+            game.player_pieces[game.cur_player]["cities"] -= 1
+            ok = True
+        else:
+            ok = False
     elif kind == "ROLL":
         # Mark rolled; production handling comes later
         game.has_rolled = True
+        # Allow tests to pass deterministic dice
+        if isinstance(arg, list) and len(arg) == 2:
+            d1, d2 = int(arg[0]), int(arg[1])
+        else:
+            d1, d2 = random.randint(1, 6), random.randint(1, 6)
+        total = d1 + d2
+        if total == 7:
+            game.move_robber_pending = True
+        else:
+            # production: for each tile with matching number, award resources by adjacent settlements/cities
+            for t in game.board.tiles:
+                if int(t.number) != total:
+                    continue
+                if t.resource == Resource.DESERT:
+                    continue
+                for n in game.board.nodes:
+                    # adjacent if node.coords == t.coords + any NODE_OFFESTS
+                    delta = n.coords - t.coords
+                    is_adj = False
+                    for off in Board.NODE_OFFESTS:
+                        if (delta == off).all():
+                            is_adj = True
+                            break
+                    if not is_adj:
+                        continue
+                    if n.player is None or getattr(n, "value", 0) == 0:
+                        continue
+                    qty = 1 if n.value == 1 else 2
+                    game.player_resources[n.player][t.resource] += qty
         ok = True
-        game.actions_log.append([color, "ROLL", None])
+        game.actions_log.append([color, "ROLL", [d1, d2]])
+    elif kind == "MOVE_ROBBER" and isinstance(arg, list) and len(arg) >= 1:
+        # arg: [tileCoord, targetColor?, resource?]
+        tile_coord = arg[0]
+        game.robber_coords = Board.tiles[0].coords if False else game.robber_coords  # no-op for type
+        game.robber_coords = (lambda a: __import__('numpy').array(a)) (tile_coord)
+        # Optional steal: find opponents on adjacent nodes, steal one resource randomly
+        opponents = set()
+        for n in game.board.nodes:
+            delta = n.coords - game.robber_coords
+            for off in Board.NODE_OFFESTS:
+                if (delta == off).all():
+                    if n.player and n.player != game.cur_player:
+                        opponents.add(n.player)
+                    break
+        stolen_res_name = None
+        if opponents:
+            victim = next(iter(opponents))
+            # pick a resource the victim has
+            avail = [r for r, cnt in game.player_resources[victim].items() if cnt > 0]
+            if avail:
+                res = random.choice(avail)
+                game.player_resources[victim][res] -= 1
+                game.player_resources[game.cur_player][res] += 1
+                stolen_res_name = resource_to_str(res)
+        game.move_robber_pending = False
+        ok = True
     elif kind == "END_TURN":
         if len(game.action_queue) == 0 and game.has_rolled:
+            # recompute longest road owner before advancing
+            best_len = 0
+            owner = None
+            for p in game.players:
+                lr = game.board.longest_road(p)
+                if lr > best_len and lr >= 5:
+                    best_len = lr
+                    owner = p
+            game.longest_road_owner = owner
             game.advance_player()
             ok = True
             game.actions_log.append([color, "END_TURN", None])
         else:
             ok = False
+    elif kind == "BUY_DEVELOPMENT_CARD":
+        pr = game.player_resources[game.cur_player]
+        if pr[Resource.WHEAT] >= 1 and pr[Resource.WOOL] >= 1 and pr[Resource.ORE] >= 1:
+            pr[Resource.WHEAT] -= 1
+            pr[Resource.WOOL] -= 1
+            pr[Resource.ORE] -= 1
+            # simple deck: rotate through types
+            order = ["KNIGHT", "ROAD_BUILDING", "YEAR_OF_PLENTY", "MONOPOLY", "VICTORY_POINT"]
+            idx = sum(sum(v.values()) for v in game.player_devs_in_hand.values()) % len(order)
+            picked = order[idx]
+            game.player_devs_in_hand[game.cur_player][picked] += 1
+            ok = True
+        else:
+            ok = False
+    elif kind == "PLAY_KNIGHT_CARD":
+        if game.player_devs_in_hand[game.cur_player]["KNIGHT"] > 0:
+            game.player_devs_in_hand[game.cur_player]["KNIGHT"] -= 1
+            game.knights_played[game.cur_player] += 1
+            # largest army reevaluation
+            best = max(game.knights_played.values())
+            owners = [p for p, v in game.knights_played.items() if v == best]
+            if best >= 3 and len(owners) == 1:
+                game.largest_army_owner = owners[0]
+            game.move_robber_pending = True
+            ok = True
+        else:
+            ok = False
+    elif kind == "PLAY_ROAD_BUILDING":
+        if game.player_devs_in_hand[game.cur_player]["ROAD_BUILDING"] > 0:
+            game.player_devs_in_hand[game.cur_player]["ROAD_BUILDING"] -= 1
+            game.free_roads_remaining[game.cur_player] = 2
+            ok = True
+        else:
+            ok = False
+    elif kind == "PLAY_YEAR_OF_PLENTY" and isinstance(arg, list):
+        # Accept one or two resources
+        res_names = [x for x in arg if x is not None][:2]
+        if game.player_devs_in_hand[game.cur_player]["YEAR_OF_PLENTY"] > 0 and 1 <= len(res_names) <= 2:
+            for name in res_names:
+                game.player_resources[game.cur_player][str_to_resource(name)] += 1
+            game.player_devs_in_hand[game.cur_player]["YEAR_OF_PLENTY"] -= 1
+            ok = True
+        else:
+            ok = False
+    elif kind == "PLAY_MONOPOLY" and isinstance(arg, str):
+        if game.player_devs_in_hand[game.cur_player]["MONOPOLY"] > 0:
+            res = str_to_resource(arg)
+            total_taken = 0
+            for p in game.players:
+                if p == game.cur_player:
+                    continue
+                cnt = game.player_resources[p][res]
+                if cnt > 0:
+                    total_taken += cnt
+                    game.player_resources[p][res] = 0
+            game.player_resources[game.cur_player][res] += total_taken
+            game.player_devs_in_hand[game.cur_player]["MONOPOLY"] -= 1
+            ok = True
+        else:
+            ok = False
+    elif kind == "MARITIME_TRADE" and isinstance(arg, list) and len(arg) == 5:
+        # arg: [g,g,g,g, receive], where g may be None; 2-4 of them depending on port
+        receive = str_to_resource(arg[4])
+        gives = [x for x in arg[:4] if x is not None]
+        if not gives:
+            ok = False
+        else:
+            give_res = str_to_resource(gives[0])
+            rate = game.bank_trade_rates[game.cur_player][give_res]
+            if len(gives) >= rate and all(x == gives[0] for x in gives):
+                if game.player_resources[game.cur_player][give_res] >= rate:
+                    game.player_resources[game.cur_player][give_res] -= rate
+                    game.player_resources[game.cur_player][receive] += 1
+                    ok = True
+                else:
+                    ok = False
+            else:
+                ok = False
     else:
         # For now, ignore other actions
         ok = False

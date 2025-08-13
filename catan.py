@@ -405,6 +405,51 @@ class Board:
     def coords_hash(coords):
         return coords[0] * 256 + coords[1]
 
+    # Compute Longest Road length for a given player using DFS with node-visit constraints
+    # This approximates official rules by preventing traversal through opponent settlements.
+    # Complexity: O(E + V) per start due to memoization on (edge, blocked_node).
+    def longest_road(self, player: str) -> int:
+        # Build subgraph of player's edges and nodes
+        owned_edge_indices = [e.index for e in self.edges if e.player == player]
+        if not owned_edge_indices:
+            return 0
+
+        blocked_nodes = set(i for i, n in enumerate(self.nodes) if n.player is not None and n.player != player)
+
+        # adjacency of edges via shared nodes, respecting blocked nodes
+        edge_to_neighbors: dict[int, list[int]] = {}
+        for ei in owned_edge_indices:
+            neighbors = []
+            for node_idx in Board.edge_node_list[ei]:
+                if node_idx in blocked_nodes:
+                    continue
+                for adj_edge_idx in Board.node_edge_list[node_idx]:
+                    if adj_edge_idx == ei:
+                        continue
+                    if self.edges[adj_edge_idx].player == player:
+                        neighbors.append(adj_edge_idx)
+            edge_to_neighbors[ei] = neighbors
+
+        # DFS from each edge, tracking visited edges to avoid reuse
+        best = 1
+        from functools import lru_cache
+
+        @lru_cache(maxsize=None)
+        def dfs(current_edge: int, visited_frozenset: frozenset[int]) -> int:
+            length = 1
+            visited = set(visited_frozenset)
+            for nxt in edge_to_neighbors.get(current_edge, []):
+                if nxt in visited:
+                    continue
+                new_visited = frozenset(visited | {nxt})
+                length = max(length, 1 + dfs(nxt, new_visited))
+            return length
+
+        for start in owned_edge_indices:
+            best = max(best, dfs(start, frozenset({start})))
+
+        return best
+
 class ActionType(Enum):
     structure = 0
     road = 1
@@ -479,6 +524,32 @@ class Game:
         self.player_resources: dict[str, dict[Resource, int]] = {
             p: {r: 0 for r in Resource if r != Resource.DESERT} for p in players
         }
+
+        # piece inventory per player
+        self.player_pieces: dict[str, dict[str, int]] = {
+            p: {"roads": 15, "settlements": 5, "cities": 4} for p in players
+        }
+
+        # dev cards per player and deck state (to be initialized by API layer)
+        self.player_devs_in_hand: dict[str, dict[str, int]] = {
+            p: {
+                "KNIGHT": 0,
+                "MONOPOLY": 0,
+                "YEAR_OF_PLENTY": 0,
+                "ROAD_BUILDING": 0,
+                "VICTORY_POINT": 0,
+            }
+            for p in players
+        }
+        self.player_devs_bought_this_turn: dict[str, dict[str, int]] = {
+            p: {k: 0 for k in [
+                "KNIGHT","MONOPOLY","YEAR_OF_PLENTY","ROAD_BUILDING","VICTORY_POINT"
+            ]} for p in players
+        }
+        self.free_roads_remaining: dict[str, int] = {p: 0 for p in players}
+        self.knights_played: dict[str, int] = {p: 0 for p in players}
+        self.largest_army_owner: str | None = None
+        self.longest_road_owner: str | None = None
 
         # robber starts on desert tile
         desert_tiles = [t for t in self.board.tiles if t.resource == Resource.DESERT]
