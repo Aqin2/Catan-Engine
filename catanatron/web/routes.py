@@ -52,8 +52,10 @@ def serialize_tiles(board: Board) -> Tuple[List[Dict[str, Any]], List[int]]:
     """Return (tiles, robber_coordinate)."""
     tiles: List[Dict[str, Any]] = []
     robber_coord = [0, 0, 0]
+    # Sort tiles by ring to ensure all 19 are emitted consistently
+    # Board.generate_board added tiles in spiral order; preserve that order by using indices
     for t in board.tiles:
-        coord = [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])]
+        coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
         if t.resource == Resource.DESERT:
             tiles.append({
                 "coordinate": coord,
@@ -90,7 +92,7 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
             delta = n.coords - t.coords
             for dir_idx, off in enumerate(Board.NODE_OFFESTS):
                 if (delta == off).all():
-                    tile_coord = [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])]
+                    tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
                     direction = NODE_DIR_LABELS[dir_idx]
                     building = (
                         "CITY"
@@ -126,9 +128,9 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
                 ),
             )
             tile_coord = [
-                int(nearest_tile.coords[0]),
-                int(nearest_tile.coords[1]),
-                int(nearest_tile.coords[2]),
+                int(int(nearest_tile.coords[0]) // 6),
+                int(int(nearest_tile.coords[1]) // 6),
+                int(int(nearest_tile.coords[2]) // 6),
             ]
             building = (
                 "CITY"
@@ -169,7 +171,7 @@ def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
             delta = e.coords - t.coords
             for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
                 if (delta == off).all():
-                    tile_coord = [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])]
+                    tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
                     direction = EDGE_DIR_LABELS[dir_idx]
                     owner = (
                         color_map.get(getattr(e, "player", None), None)
@@ -199,9 +201,9 @@ def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
                 ),
             )
             tile_coord = [
-                int(nearest_tile.coords[0]),
-                int(nearest_tile.coords[1]),
-                int(nearest_tile.coords[2]),
+                int(int(nearest_tile.coords[0]) // 6),
+                int(int(nearest_tile.coords[1]) // 6),
+                int(int(nearest_tile.coords[2]) // 6),
             ]
             owner = (
                 color_map.get(getattr(e, "player", None), None)
@@ -548,9 +550,20 @@ def post_action(game_id):
             coords = t.coords + Board.EDGE_OFFSETS[int(dir_idx)]
         except Exception:
             return jsonify({"error": "invalid edge id"}), 400
-        # initial placement free
+        # Validate adjacency strictly based on the last placed settlement during setup
         if len(game.action_queue) > 0:
-            ok = game.step(RoadAction(coords=coords))
+            # Road must be one of the two edges adjacent to the just-placed settlement
+            last_idx = getattr(game, "last_start_node_idx", None)
+            valid_adj = False
+            if last_idx is not None:
+                for eidx in Board.node_edge_list[last_idx]:
+                    if (game.board.edges[eidx].coords == coords).all():
+                        valid_adj = True
+                        break
+            if not valid_adj:
+                ok = False
+            else:
+                ok = game.step(RoadAction(coords=coords))
         else:
             have_free = game.free_roads_remaining[game.cur_player] > 0
             pr = game.player_resources[game.cur_player]
@@ -748,3 +761,58 @@ def post_action(game_id):
         return jsonify(serialize_game(game))
 
     return jsonify(serialize_game(game))
+
+
+# --- Debug endpoints ---
+@app.route('/api/debug/<game_id>/last-start-node')
+def debug_last_start_node(game_id):
+    game = GAMES.get(game_id)
+    if not game:
+        return jsonify({"error": "game not found"}), 404
+    idx = getattr(game, "last_start_node_idx", None)
+    if idx is None:
+        return jsonify({"last_start_node": None})
+    node = game.board.nodes[idx]
+    edges = []
+    for eidx in Board.node_edge_list[idx]:
+        e = game.board.edges[eidx]
+        # find tile+dir id like the UI uses
+        mapping = []
+        for t in game.board.tiles:
+            delta = e.coords - t.coords
+            for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
+                if (delta == off).all():
+                    mapping.append({
+                        "tile_index": int(t.index),
+                        "dir_index": int(dir_idx),
+                        "tile_coord": [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])],
+                    })
+        edges.append({
+            "edge_index": int(e.index),
+            "edge_coords": [int(e.coords[0]), int(e.coords[1]), int(e.coords[2])],
+            "ui_ids": mapping,
+        })
+    return jsonify({
+        "last_start_node": {
+            "index": int(node.index),
+            "coords": [int(node.coords[0]), int(node.coords[1]), int(node.coords[2])],
+        },
+        "adjacent_edges": edges,
+    })
+
+
+@app.route('/api/debug/<game_id>/tiles')
+def debug_tiles(game_id):
+    game = GAMES.get(game_id)
+    if not game:
+        return jsonify({"error": "game not found"}), 404
+    tiles = [
+        {
+            "index": int(t.index),
+            "coord": [int(t.coords[0]), int(t.coords[1]), int(t.coords[2])],
+            "resource": resource_to_str(t.resource),
+            "number": int(t.number),
+        }
+        for t in game.board.tiles
+    ]
+    return jsonify({"count": len(tiles), "tiles": tiles})

@@ -42,9 +42,9 @@ class Node(Entity):
         Direction.S
     ]
     EDGE_OFFSETS = [
-        Direction.Q // 2,
-        Direction.R // 2,
-        Direction.S // 2
+        Direction.RS,  # edge between R and S directions
+        Direction.SQ,  # edge between S and Q
+        Direction.QR,  # edge between Q and R
     ]
     def __init__(self, coords, index):
         super().__init__(coords, index)
@@ -403,7 +403,8 @@ class Board:
 
     @staticmethod
     def coords_hash(coords):
-        return coords[0] * 256 + coords[1]
+        # Use full 3D cube coordinates to avoid collisions
+        return (int(coords[0]), int(coords[1]), int(coords[2]))
 
     # Compute Longest Road length for a given player using DFS with node-visit constraints
     # This approximates official rules by preventing traversal through opponent settlements.
@@ -587,6 +588,10 @@ class Game:
         r = self.board.place_structure(action.coords, self.cur_player, action.value, starting=starting)
         if not r:
             return False
+        if starting:
+            node: Node = self.board.node_dict.get(Board.coords_hash(action.coords))
+            if node is not None:
+                self.last_start_node_idx = node.index
         port: Port = self.board.node_port_dict.get(Board.coords_hash(action.coords), None)
         if port is not None:
             if port.resource is None:
