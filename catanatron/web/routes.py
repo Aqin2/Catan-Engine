@@ -155,14 +155,19 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
 
 
 def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, Any]]:
-    EDGE_DIR_LABELS = [
-        "NORTHEAST",
-        "EAST",
-        "SOUTHEAST",
-        "SOUTHWEST",
-        "WEST",
-        "NORTHWEST",
-    ]
+    # Compute UI direction by projecting edge offset to pixel space and snapping to nearest of 6 standard angles
+    import math
+    LABELS = ["NORTHEAST", "EAST", "SOUTHEAST", "SOUTHWEST", "WEST", "NORTHWEST"]
+    TARGET_DEGS = [30, 90, 150, 210, 270, 330]
+
+    def to_label(delta) -> str:
+        q = float(delta[0])
+        r = float(delta[2])
+        x = math.sqrt(3) * q + (math.sqrt(3) / 2.0) * r
+        y = 1.5 * r
+        deg = (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+        idx = min(range(6), key=lambda i: min(abs(deg - TARGET_DEGS[i]), 360 - abs(deg - TARGET_DEGS[i])))
+        return LABELS[idx]
 
     edges: List[Dict[str, Any]] = []
     for e in board.edges:
@@ -172,7 +177,7 @@ def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
             for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
                 if (delta == off).all():
                     tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
-                    direction = EDGE_DIR_LABELS[dir_idx]
+                    direction = to_label(delta)
                     owner = (
                         color_map.get(getattr(e, "player", None), None)
                         if getattr(e, "player", None)
@@ -210,11 +215,13 @@ def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
                 if getattr(e, "player", None)
                 else None
             )
+            # derive direction based on delta to nearest tile
+            direction = to_label(e.coords - nearest_tile.coords)
             edges.append(
                 {
                     "id": [int(nearest_tile.index), 0],
                     "color": owner,
-                    "direction": EDGE_DIR_LABELS[0],
+                    "direction": direction,
                     "tile_coordinate": tile_coord,
                 }
             )
@@ -367,10 +374,18 @@ def compute_current_playable_actions(game: Game) -> List[Any]:
             if n.available:
                 actions.append([color, "BUILD_SETTLEMENT", int(n.index)])
     elif head.name == "road":
-        for e in game.board.edges:
-            if not _edge_valid_for_player(game.board, e, game.cur_player):
-                continue
-            # Find the tile+direction id used by UI
+        # In initial placement, restrict to the two edges adjacent to the last placed settlement
+        last_idx = getattr(game, "last_start_node_idx", None)
+        candidate_edge_indices: List[int] = []
+        if last_idx is not None:
+            candidate_edge_indices = list(Board.node_edge_list[last_idx])
+        else:
+            # Fallback: compute via connectivity (should not happen in correct flow)
+            candidate_edge_indices = [e.index for e in game.board.edges if _edge_valid_for_player(game.board, e, game.cur_player)]
+
+        for eidx in candidate_edge_indices:
+            e = game.board.edges[eidx]
+            # Map to UI id using tile + direction
             for t in game.board.tiles:
                 delta = e.coords - t.coords
                 for dir_idx, off in enumerate(Board.EDGE_OFFSETS):

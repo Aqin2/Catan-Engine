@@ -42,9 +42,9 @@ class Node(Entity):
         Direction.S
     ]
     EDGE_OFFSETS = [
-        Direction.RS,  # edge between R and S directions
-        Direction.SQ,  # edge between S and Q
-        Direction.QR,  # edge between Q and R
+        Direction.Q // 2,
+        Direction.R // 2,
+        Direction.S // 2
     ]
     def __init__(self, coords, index):
         super().__init__(coords, index)
