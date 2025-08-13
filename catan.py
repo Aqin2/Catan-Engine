@@ -294,42 +294,41 @@ class Board:
         if Board.adj_lists_set:
             return
         
-        Board.edge_edge_list = []
-        for edge in self.edges:
-            adj = []
-            for coords in edge.adj_edge_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.edge_dict.keys():
-                    adj.append(self.edge_dict[hash].index)
-            
-            Board.edge_edge_list.append(adj)
-                    
-        Board.node_node_list: list[list[int]] = []
-        for node in self.nodes:
-            adj = []
-            for coords in node.adj_node_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash].index)
-            Board.node_node_list.append(adj)
-
-        Board.node_edge_list: list[list[int]] = []
-        for node in self.nodes:
-            adj = []
-            for coords in node.adj_edge_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.edge_dict.keys():
-                    adj.append(self.edge_dict[hash].index)
-            Board.node_edge_list.append(adj)
-
+        # Build edge->edge adjacency via shared nodes
         Board.edge_node_list: list[list[int]] = []
         for edge in self.edges:
-            adj = []
+            adj_nodes = []
             for coords in edge.adj_node_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash].index)
-            Board.edge_node_list.append(adj)
+                h = Board.coords_hash(coords)
+                if h in self.node_dict:
+                    adj_nodes.append(self.node_dict[h].index)
+            Board.edge_node_list.append(adj_nodes)
+
+        # Invert to build node->edge adjacency (more robust than using Node.adj_edge_coords)
+        Board.node_edge_list: list[list[int]] = [[] for _ in self.nodes]
+        for e_idx, node_indices in enumerate(Board.edge_node_list):
+            for n_idx in node_indices:
+                Board.node_edge_list[n_idx].append(e_idx)
+
+        # Build node->node adjacency via edges
+        Board.node_node_list: list[list[int]] = [[] for _ in self.nodes]
+        for n_idx, edge_indices in enumerate(Board.node_edge_list):
+            neighbors = set()
+            for e_idx in edge_indices:
+                for other_n in Board.edge_node_list[e_idx]:
+                    if other_n != n_idx:
+                        neighbors.add(other_n)
+            Board.node_node_list[n_idx] = list(neighbors)
+
+        # Build edge->edge adjacency via nodes
+        Board.edge_edge_list = []
+        for e_idx, node_indices in enumerate(Board.edge_node_list):
+            neighbor_edges = set()
+            for n_idx in node_indices:
+                for adj_e in Board.node_edge_list[n_idx]:
+                    if adj_e != e_idx:
+                        neighbor_edges.add(adj_e)
+            Board.edge_edge_list.append(list(neighbor_edges))
         
         Board.adj_lists_set = True
 
@@ -503,12 +502,16 @@ class Game:
         self.seed = seed
 
         self.board = Board(seed=seed)
-        self.cur_player = self.players[0]
-        self.cur_player_idx = 0
+        # Initial placement uses a snake order: 0..N-1 then N-1..0
+        self.setup_order: list[int] = list(range(len(players))) + list(reversed(range(len(players))))
+        self.setup_index: int = 0
+        self.cur_player_idx = self.setup_order[0] if self.setup_order else 0
+        self.cur_player = self.players[self.cur_player_idx]
         #start, prod, or action
         self.step_fn = self.step_start
 
-        self.action_queue = deque([ActionType.structure, ActionType.road] * len(players))
+        # Two settlement+road pairs per player (snake order)
+        self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.setup_order))
 
         # turn state
         self.has_rolled = False
@@ -579,7 +582,12 @@ class Game:
             if not ok:
                 return False
             self.action_queue.popleft()
-            self.advance_player()
+            # After completing a settlement+road pair, advance according to setup order
+            if self.setup_index < len(self.setup_order) - 1:
+                self.setup_index += 1
+                self.cur_player_idx = self.setup_order[self.setup_index]
+                self.cur_player = self.players[self.cur_player_idx]
+            # else: finished initial placements; keep current player for first normal turn
             return True
         
         #success

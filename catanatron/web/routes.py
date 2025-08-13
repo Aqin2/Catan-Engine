@@ -76,6 +76,11 @@ def serialize_tiles(board: Board) -> Tuple[List[Dict[str, Any]], List[int]]:
 
 
 def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    # Determine node direction label by projecting to pixel space and snapping
+    # to the nearest of the 6 canonical vertex angles. This avoids relying on
+    # the ordering of Board.NODE_OFFESTS which may not match UI expectations.
+    import math
+
     NODE_DIR_LABELS = [
         "NORTH",
         "NORTHEAST",
@@ -84,16 +89,30 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
         "SOUTHWEST",
         "NORTHWEST",
     ]
+    TARGET_DEGS = [0, 60, 120, 180, 240, 300]
+
+    def to_node_label(delta) -> str:
+        q = float(delta[0])
+        r = float(delta[2])
+        x = math.sqrt(3) * q + (math.sqrt(3) / 2.0) * r
+        y = 1.5 * r
+        deg = (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+        idx = min(
+            range(6),
+            key=lambda i: min(abs(deg - TARGET_DEGS[i]), 360 - abs(deg - TARGET_DEGS[i])),
+        )
+        return NODE_DIR_LABELS[idx]
 
     nodes: List[Dict[str, Any]] = []
-    for n in board.nodes:
+    # Deduplicate by iterating canonical nodes (one per coordinate)
+    for n in board.node_dict.values():
         found = False
         for t in board.tiles:
             delta = n.coords - t.coords
-            for dir_idx, off in enumerate(Board.NODE_OFFESTS):
+            for _dir_idx, off in enumerate(Board.NODE_OFFESTS):
                 if (delta == off).all():
                     tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
-                    direction = NODE_DIR_LABELS[dir_idx]
+                    direction = to_node_label(delta)
                     building = (
                         "CITY"
                         if getattr(n, "value", 0) == 2
@@ -146,7 +165,7 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
                 {
                     "id": int(n.index),
                     "tile_coordinate": tile_coord,
-                    "direction": "NORTH",
+                    "direction": to_node_label(n.coords - nearest_tile.coords),
                     "building": building,
                     "color": owner,
                 }
@@ -154,8 +173,10 @@ def serialize_nodes(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
     return nodes
 
 
-def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, Any]]:
-    # Compute UI direction by projecting edge offset to pixel space and snapping to nearest of 6 standard angles
+def _edge_id_for_edge(board: Board, e: Edge) -> Tuple[int, int, str, List[int]]:
+    """Return canonical (tile_index, dir_index, direction_label, tile_coordinate) for an edge.
+    Chooses the matching tile with the smallest tile.index to ensure stable IDs across API and actions.
+    """
     import math
     LABELS = ["NORTHEAST", "EAST", "SOUTHEAST", "SOUTHWEST", "WEST", "NORTHWEST"]
     TARGET_DEGS = [30, 90, 150, 210, 270, 330]
@@ -169,62 +190,56 @@ def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, A
         idx = min(range(6), key=lambda i: min(abs(deg - TARGET_DEGS[i]), 360 - abs(deg - TARGET_DEGS[i])))
         return LABELS[idx]
 
-    edges: List[Dict[str, Any]] = []
-    for e in board.edges:
-        found = False
-        for t in board.tiles:
-            delta = e.coords - t.coords
-            for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
-                if (delta == off).all():
-                    tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
-                    direction = to_label(delta)
-                    owner = (
-                        color_map.get(getattr(e, "player", None), None)
-                        if getattr(e, "player", None)
-                        else None
-                    )
-                    edges.append(
-                        {
-                            "id": [int(t.index), int(dir_idx)],
-                            "color": owner,
-                            "direction": direction,
-                            "tile_coordinate": tile_coord,
-                        }
-                    )
-                    found = True
-                    break
-            if found:
+    best: Tuple[int, int, str, List[int]] | None = None
+    for t in board.tiles:
+        delta = e.coords - t.coords
+        for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
+            if (delta == off).all():
+                tile_coord = [int(int(t.coords[0]) // 6), int(int(t.coords[1]) // 6), int(int(t.coords[2]) // 6)]
+                candidate = (int(t.index), int(dir_idx), to_label(delta), tile_coord)
+                if best is None or candidate[0] < best[0]:
+                    best = candidate
                 break
-        if not found:
-            # Fallback to nearest tile and canonical direction
-            nearest_tile = min(
-                board.tiles,
-                key=lambda t: int(
-                    abs(e.coords[0] - t.coords[0])
-                    + abs(e.coords[1] - t.coords[1])
-                    + abs(e.coords[2] - t.coords[2])
-                ),
-            )
-            tile_coord = [
+    if best is None:
+        # Fallback to nearest tile and canonical direction
+        nearest_tile = min(
+            board.tiles,
+            key=lambda t: int(
+                abs(e.coords[0] - t.coords[0])
+                + abs(e.coords[1] - t.coords[1])
+                + abs(e.coords[2] - t.coords[2])
+            ),
+        )
+        delta = e.coords - nearest_tile.coords
+        best = (
+            int(nearest_tile.index),
+            0,
+            to_label(delta),
+            [
                 int(int(nearest_tile.coords[0]) // 6),
                 int(int(nearest_tile.coords[1]) // 6),
                 int(int(nearest_tile.coords[2]) // 6),
-            ]
-            owner = (
-                color_map.get(getattr(e, "player", None), None)
-                if getattr(e, "player", None)
-                else None
-            )
-            # derive direction based on delta to nearest tile
-            direction = to_label(e.coords - nearest_tile.coords)
-            edges.append(
-                {
-                    "id": [int(nearest_tile.index), 0],
-                    "color": owner,
-                    "direction": direction,
-                    "tile_coordinate": tile_coord,
-                }
-            )
+            ],
+        )
+    return best
+
+
+def serialize_edges(board: Board, color_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    edges: List[Dict[str, Any]] = []
+    # Deduplicate by iterating canonical edges (one per coordinate)
+    for e in board.edge_dict.values():
+        tile_idx, dir_idx, direction, tile_coord = _edge_id_for_edge(board, e)
+        owner = (
+            color_map.get(getattr(e, "player", None), None)
+            if getattr(e, "player", None)
+            else None
+        )
+        edges.append({
+            "id": [tile_idx, dir_idx],
+            "color": owner,
+            "direction": direction,
+            "tile_coordinate": tile_coord,
+        })
     return edges
 
 
@@ -284,19 +299,8 @@ def compute_current_playable_actions(game: Game) -> List[Any]:
                 if not (have_free or have_res):
                     pass
                 else:
-                    for t in game.board.tiles:
-                        delta = e.coords - t.coords
-                        for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
-                            if (delta == off).all():
-                                actions.append([
-                                    color,
-                                    "BUILD_ROAD",
-                                    [int(t.index), int(dir_idx)],
-                                ])
-                                break
-                        else:
-                            continue
-                        break
+                    tile_idx, dir_idx, _direction, _tile_coord = _edge_id_for_edge(game.board, e)
+                    actions.append([color, "BUILD_ROAD", [int(tile_idx), int(dir_idx)]])
 
             # Settlements
             if game.player_pieces[game.cur_player]["settlements"] > 0:
@@ -370,31 +374,23 @@ def compute_current_playable_actions(game: Game) -> List[Any]:
     color = player_to_color[game.cur_player]
     head = game.action_queue[0]
     if head.name == "structure":
+        # During initial placements, only allow settlements available globally
+        # (no road adjacency requirement), but ensure they are not blocked by
+        # distance rule which is already encoded by n.available.
         for n in game.board.nodes:
             if n.available:
                 actions.append([color, "BUILD_SETTLEMENT", int(n.index)])
     elif head.name == "road":
-        # In initial placement, restrict to the two edges adjacent to the last placed settlement
+        # Restrict to the two edges adjacent to the last placed settlement for the current player
         last_idx = getattr(game, "last_start_node_idx", None)
         candidate_edge_indices: List[int] = []
         if last_idx is not None:
             candidate_edge_indices = list(Board.node_edge_list[last_idx])
-        else:
-            # Fallback: compute via connectivity (should not happen in correct flow)
-            candidate_edge_indices = [e.index for e in game.board.edges if _edge_valid_for_player(game.board, e, game.cur_player)]
 
         for eidx in candidate_edge_indices:
             e = game.board.edges[eidx]
-            # Map to UI id using tile + direction
-            for t in game.board.tiles:
-                delta = e.coords - t.coords
-                for dir_idx, off in enumerate(Board.EDGE_OFFSETS):
-                    if (delta == off).all():
-                        actions.append([color, "BUILD_ROAD", [int(t.index), int(dir_idx)]])
-                        break
-                else:
-                    continue
-                break
+            tile_idx, dir_idx, _direction, _tile_coord = _edge_id_for_edge(game.board, e)
+            actions.append([color, "BUILD_ROAD", [int(tile_idx), int(dir_idx)]])
     return actions
 
 
