@@ -1,73 +1,40 @@
 from enum import Enum
 from collections import deque
+from copy import copy
 
 from globals import *
 from entities import *
+from actions import *
 from board import Board
 from player import Player
 
-class ActionType(Enum):
-    end_turn = 0
-    structure = 1
-    road = 2
-    play_dev = 3
-    buy_dev = 4
-    roll = 5
-
-    bank_trade = 6
-
-class GameAction:
-    def __init__(self, type: ActionType):
-        self.type = type
-
-class StructureAction(GameAction):
-    def __init__(self, coords, value):
-        super().__init__(ActionType.structure)
-        self.coords = coords
-        self.value = value
-
-class RoadAction(GameAction):
-    def __init__(self, coords):
-        super().__init__(ActionType.road)
-        self.coords = coords
-
-class DevType(Enum):
-    knight = 0
-    monopoly = 1
-    road_build = 2
-    invention = 3
-
-    victory_point = 4
-
-class PlayDevAction(GameAction):
-    def __init__(self, dev_type: DevType):
-        super().__init__(ActionType.play_dev)
-        self.dev_type = dev_type
-
-class BuyDevAction(GameAction):
-    def __init__(self):
-        super().__init__(ActionType.buy_dev)
-
-class RollAction(GameAction):
-    def __init__(self):
-        super().__init__(ActionType.roll)
-
-class BankTradeAction(GameAction):
-    def __init__(self, trade_in, trade_for):
-        super().__init__(ActionType.bank_trade)
-        self.trade_in = trade_in
-        self.trade_for = trade_for
-
-class EndTurnAction(GameAction):
-    def __init__(self):
-        super().__init__(ActionType.end_turn)
-
-
 class Game:
     roll_p = np.convolve(np.full((6,), 1 / 6), np.full((6,), 1 / 6))
+    SETTLEMENT_COST = {
+        Resource.BRICK: 1,
+        Resource.WOOD: 1,
+        Resource.WOOL: 1,
+        Resource.WHEAT: 1
+    }
+    CITY_COST = {
+        Resource.WHEAT: 2,
+        Resource.ORE: 3,
+    }
+    ROAD_COST = {
+        Resource.BRICK: 1,
+        Resource.WOOD: 1
+    }
+    DEV_CARD_COST = {
+        Resource.WOOL: 1,
+        Resource.WHEAT: 1,
+        Resource.ORE: 1
+    }
+    DEV_CARDS = [DevType.knight] * 14 + [DevType.victory_point] * 5 + [DevType.monopoly] * 2 + \
+        [DevType.road_build] * 2 + [DevType.monopoly] * 2
+
 
     def __init__(self, player_names: list[str], seed=None):
-        np.random.seed(seed)
+        self.random = np.random.default_rng(seed=seed)
         self.player_names = player_names
         self.seed = seed
 
@@ -90,14 +57,14 @@ class Game:
         self.has_played_dev = False
         self.has_rolled = False
 
-
-        
+        self.dev_cards = copy(Game.DEV_CARDS)
+        self.random.shuffle(self.dev_cards)
         
     
     def step(self, *args):
         res = self.step_fn(args)
 
-    def step_start(self, action: GameAction):
+    def step_start(self, action: Action):
         if action.type != self.action_queue[0]:
             #invalid action, returns false
             return False
@@ -117,27 +84,40 @@ class Game:
         
         return False
     
-    def step_main(self, action: GameAction):
-        if len(self.action_queue) == 0:
-            match action.type:
-                case ActionType.end_turn:
-                    if self.has_rolled:
-                        self.advance_player()
-                        return True
-                    else:
-                        return False
-                case ActionType.structure:
-                    return self.place_structure(action)
-                case ActionType.road:
-                    return self.place_road(action)
-                case ActionType.play_dev:
-                    return self.play_dev(action)
-                case ActionType.buy_dev:
-                    return self.buy_dev(action)
-                case ActionType.roll:
-                    return self.roll(action)
-                case ActionType.bank_trade:
-                    return self.bank_trade(action)
+    def step_main(self, action: Action):
+        use_queue = len(self.action_queue) > 0
+
+        cur_action = self.action_queue[0] if use_queue else action
+        if action.type != cur_action.type:
+            return False
+
+        r = False
+        
+        match cur_action.type:
+            case ActionType.end_turn:
+                if self.has_rolled:
+                    self.advance_player()
+                    r = True
+                else:
+                    r = False
+            case ActionType.structure:
+                r = self.place_structure(action)
+            case ActionType.road:
+                r = self.place_road(action)
+            case ActionType.play_dev:
+                r = self.play_dev(action)
+            case ActionType.buy_dev:
+                r = self.buy_dev(action)
+            case ActionType.roll:
+                r = self.roll(action)
+            case ActionType.bank_trade:
+                r = self.bank_trade(action)
+            case ActionType.move_robber:
+                r = self.move_robber(action)
+        
+        if r and use_queue:
+            self.action_queue.popleft()
+        return r
 
 
     def place_structure(self, action: StructureAction, starting=False):
@@ -146,12 +126,22 @@ class Game:
         r = self.board.place_structure(action.coords, self.cur_player_data, action.value, starting=starting)
         if not r:
             return False
-        
+    
         if action.value == 1:
+            if self.cur_player_data.rem_settlements <= 0:
+                return False
+            if not starting:
+                if not self.pay_cost(Game.SETTLEMENT_COST):
+                    return False
             self.cur_player_data.rem_settlements -= 1
+
         elif action.value == 2:
+            if self.cur_player_data.rem_cities <= 0:
+                return False
+            if not self.pay_cost(Game.CITY_COST):
+                return False
             self.cur_player_data.rem_cities -= 1
-            self.cur_player_data.rem_settlements += 1 #not really necessary but more realistic
+
 
         port: Port = self.board.node_port_dict.get(Board.coords_hash(action.coords), None)
         if port is not None:
@@ -170,7 +160,13 @@ class Game:
         if not r:
             return False
         
+        if self.road_dev_count == 0:
+            if not self.pay_cost(Game.ROAD_COST):
+                return False
+        
         self.cur_player_data.rem_roads -= 1
+        if self.road_dev_count > 0:
+            self.road_dev_count -= 1
 
         #TODO: check longest road
 
@@ -179,10 +175,29 @@ class Game:
     def play_dev(self, action: PlayDevAction):
         if self.has_played_dev:
             return False
+        dev_type = action.dev_type
+        #cant play dev cards on the turn they were bought
+        if self.cur_player_data.dev_cards[dev_type] - self.cur_player_data.dev_cards_cur_turn[dev_type] <= 0:
+            return False
+        #TODO: implement different types of actions
+
+        #...
+
+        return True
+        
         
     def buy_dev(self, action: BuyDevAction):
         if not self.has_rolled:
             return False
+        if len(self.dev_cards) <= 0:
+            return False
+        if not self.pay_cost(Game.DEV_CARD_COST):
+            return False
+        dev_card = self.dev_cards.pop()
+        self.cur_player_data.dev_cards[dev_card] += 1
+        self.cur_player_data.dev_cards_cur_turn[dev_card] += 1
+        return True
+        
         
     def roll(self, action: RollAction):
         if self.has_rolled:
@@ -195,21 +210,41 @@ class Game:
             pass
         else:
             for player in self.player_data.values():
-                resource_gain = player.resource_gen[roll_n]
+                resource_gain = player.resources_gen[roll_n]
                 for resource in Resource:
-                    player.resources[resource] += resource_gain[resource]
+                    if resource != Resource.DESERT:
+                        player.resources[resource] += resource_gain[resource]
         return True
             
-    
+    def move_robber(self, action: MoveRobberAction):
+        r = self.board.move_robber(action.tile_coords)
+        if not r:
+            return False
+
     def bank_trade(self, action: RollAction):
         if not self.has_rolled:
             return False
                 
+    def pay_cost(self, cost: dict[Resource, int]):
+        for resource in Resource:
+            if resource != Resource.DESERT:
+                if self.cur_player_data[resource] < cost[resource]:
+                    return False
+                
+        for resource in Resource:
+            if resource != Resource.DESERT:
+                self.cur_player_data[resource] -= cost[resource]
+
+        return True
+    
     def advance_player(self):
+        for dev_type in DevType:
+            self.cur_player_data.dev_cards_cur_turn[dev_type] = 0
+
         self.cur_player_idx += 1
         self.cur_player_idx %= len(self.player_names)
         self.cur_player_name = self.player_names[self.cur_player_idx]
         self.cur_player_data = self.player_data[self.cur_player_idx]
 
     def get_roll_n(self):
-        return np.random.choice([i for i in range(2, 13)], p=Game.roll_p)
+        return self.random.choice([i for i in range(2, 13)], p=Game.roll_p)

@@ -59,6 +59,7 @@ class Board:
     def __init__(self, seed=None):
         #randomly initialize tile and number lists
         self.seed = seed
+        self.random = np.random.default_rng(seed=seed)
 
         self.generate_board()
         self.build_dicts()
@@ -66,16 +67,15 @@ class Board:
         
     #randomly generate a new board
     def generate_board(self):
-        np.random.seed(self.seed)
         resources = np.array(Board.RESOURCES)
         numbers = np.array(Board.NUMBERS)
         port_data = copy(Board.PORTS)
 
-        np.random.shuffle(resources)
-        np.random.shuffle(numbers)
-        np.random.shuffle(port_data)
+        self.random.shuffle(resources)
+        self.random.shuffle(numbers)
+        self.random.shuffle(port_data)
 
-        desert_idx = np.random.randint(19)
+        desert_idx = self.random.randint(19)
         resources = np.insert(resources, desert_idx, Resource.DESERT)
         numbers = np.insert(resources, desert_idx, -1)
         
@@ -110,6 +110,8 @@ class Board:
                         resources[tile_idx],
                         numbers[tile_idx]
                     ))
+                    if resources[tile_idx] == Resource.DESERT:
+                        self.robber_coords = cur_tile_coords.copy()
 
                     tile_idx += 1
                     
@@ -219,15 +221,24 @@ class Board:
         node: Node = self.node_dict.get(Board.coords_hash(coords))
         if node is None:
             return False
-        if not node.available:
-            return False
-        if not starting:
-            has_road = False
-            for adj_idx in Board.node_edge_list[node.index]:
-                if self.edges[adj_idx].player == player:
-                    has_road = True
-                    break
-            if not has_road:
+        if value == 1:
+            if not node.available:
+                return False
+            if not starting:
+                has_road = False
+                for adj_idx in Board.node_edge_list[node.index]:
+                    if self.edges[adj_idx].player == player:
+                        has_road = True
+                        break
+                if not has_road:
+                    return False
+        elif value == 2:
+            #cant build cities initially
+            if starting:
+                return False
+            if node.value != 1:
+                return False
+            if node.player != player:
                 return False
             
         old_value = node.value
@@ -235,7 +246,7 @@ class Board:
         for adj_idx in Board.node_tile_list[node.index]:
             tile = self.tiles[adj_idx]
             if tile.resource != Resource.DESERT:
-                player.resource_gen[tile.number][tile.resource] += value - old_value
+                player.resources_gen[tile.number][tile.resource] += value - old_value
 
         node.place_structure(player, value)
         
@@ -274,6 +285,15 @@ class Board:
             #if node is occupied by other player, cannot be built from that node
             
         return False
+
+    def move_robber(self, coords):
+        if self.robber_coords == coords:
+            return False
+        tile: Tile = self.tile_dict.get(Board.coords_hash(coords), None)
+        if tile is None:
+            return False
+        self.robber_coords = coords
+        
 
     @staticmethod
     def coords_hash(coords):

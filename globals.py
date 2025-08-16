@@ -25,3 +25,11 @@ class Direction():
     NQR = -QR
     NRS = -RS
     NSQ = -SQ
+
+class DevType(Enum):
+    knight = 0
+    monopoly = 1
+    road_build = 2
+    invention = 3
+
+    victory_point = 4
