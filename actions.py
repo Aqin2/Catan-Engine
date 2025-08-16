@@ -1,4 +1,4 @@
-from globals import DevType
+from globals import DevType, Resource
 from enum import Enum
 
 class ActionType(Enum):
@@ -12,6 +12,8 @@ class ActionType(Enum):
     player_trade = 7 #not implemented
     move_robber = 8
     steal = 9
+    monopoly = 10
+    invention = 11
 
 class Action:
     def __init__(self, type: ActionType):
@@ -56,6 +58,16 @@ class StealAction(Action):
     def __init__(self, player):
         super().__init__(ActionType.steal)
         self.player = player
+
+class MonopolyAction(Action):
+    def __init__(self, resource: Resource):
+        super().__init__(ActionType.monopoly)
+        self.resource = resource
+
+class InventionAction(Action):
+    def __init__(self, resources: dict[Resource, int]):
+        super().__init__(ActionType.invention)
+        self.resources = resources
 
 class EndTurnAction(Action):
     def __init__(self):

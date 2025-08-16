@@ -7,7 +7,6 @@ class Resource(Enum):
     WOOL = 2
     WHEAT =  3
     ORE = 4
-    DESERT = 5
 
 class Direction():
     #dirs from center of tile to corner of tile

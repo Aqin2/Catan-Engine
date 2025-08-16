@@ -25,6 +25,9 @@ class Player:
         self.rem_cities = 4
         self.rem_roads = 15
 
+        self.n_settlements = 0
+        self.n_cities = 0
+
         self.dev_cards = dict()
         self.dev_cards_cur_turn = dict()
         for dev_type in DevType:
@@ -38,18 +41,20 @@ class Player:
         self.has_longest_road = False
         self.has_largest_army = False
 
-    def gen_resources(self, roll_n):
-        resource_gain = self.resources_gen[roll_n]
-        resource_block = self.resources_block[roll_n]
-        for resource in Resource:
-            if resource != Resource.DESERT:
-                self.resources[resource] += resource_gain[resource] - resource_block[resource]
-
     def reset_resource_block(self):
         for roll in range(2, 13):
             if roll == 7:
                 continue
             for resource in Resource:
-                if resource != Resource.DESERT:
-                    self.resources_block[roll][resource] = 0
+                self.resources_block[roll][resource] = 0
+    
+    def calculate_victory_points(self):
+        victory_points = 0
+        victory_points += self.n_settlements * 1
+        victory_points += self.n_cities * 2
+        victory_points += 2 if self.has_largest_army else 0
+        victory_points += 2 if self.has_longest_road else 0
+        victory_points += self.dev_cards[DevType.victory_point] * 1
+        
+        self.victory_points = victory_points
             

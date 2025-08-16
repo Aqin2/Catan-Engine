@@ -76,7 +76,7 @@ class Board:
         self.random.shuffle(port_data)
 
         desert_idx = self.random.randint(19)
-        resources = np.insert(resources, desert_idx, Resource.DESERT)
+        resources = np.insert(resources, desert_idx, None)
         numbers = np.insert(resources, desert_idx, -1)
         
         #add initial tiles, edges and nodes
@@ -110,7 +110,7 @@ class Board:
                         resources[tile_idx],
                         numbers[tile_idx]
                     ))
-                    if resources[tile_idx] == Resource.DESERT:
+                    if resources[tile_idx] is None:
                         self.robber_tile = self.tiles[tile_idx]
 
                     tile_idx += 1
@@ -254,7 +254,7 @@ class Board:
 
         for adj_idx in Board.node_tile_list[node.index]:
             tile = self.tiles[adj_idx]
-            if tile.resource != Resource.DESERT:
+            if tile.resource is not None:
                 player.resources_gen[tile.number][tile.resource] += value - old_value
 
         node.place_structure(player, value)
