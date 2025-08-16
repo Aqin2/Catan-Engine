@@ -181,7 +181,9 @@ class Game:
             return False
         #TODO: implement different types of actions
 
-        #...
+        match action.dev_type:
+            case DevType.knight:
+                self.action_queue.append(ActionType.move_robber)
 
         return True
         
@@ -206,20 +208,58 @@ class Game:
         roll_n = self.get_roll_n()
 
         if roll_n == 7:
-            #TODO: queue up a move robber action
+            self.action_queue.append(ActionType.move_robber)
             pass
         else:
             for player in self.player_data.values():
-                resource_gain = player.resources_gen[roll_n]
-                for resource in Resource:
-                    if resource != Resource.DESERT:
-                        player.resources[resource] += resource_gain[resource]
+                player.gen_resources()
         return True
             
     def move_robber(self, action: MoveRobberAction):
         r = self.board.move_robber(action.tile_coords)
         if not r:
             return False
+        
+        #TODO: only add steal action if more than 1 player has at least 1 resource next to robber tile
+        self.action_queue.append(ActionType.steal)
+        
+        for player in self.player_data.values():
+            player.reset_resource_block()
+    
+        robber_tile = self.board.robber_tile
+        if robber_tile.resource == Resource.DESERT:
+            #nothing blocked if robber is on desert
+            return True
+
+        for node_idx in Board.tile_node_list[robber_tile.index]:
+            node = self.board.nodes[node_idx]
+            if node.player:
+                node.player.resources_block[robber_tile.number][robber_tile.resource] += node.value
+        
+        return True
+    
+    def steal(self, action: StealAction):
+        #TODO: implement this
+
+        #check if player is not self and has a settlement/city next to the robber tile
+        #steal a random resource (use resource amounts as weights)
+
+        #pirate software tribute
+        # match gl_arr[118974][21485]:
+        #     case 1:
+        #         what_the.johio_ohn()
+        #     case 2:
+        #         what_the.johio_ohn()
+        #     case 3:
+        #         what_the.johio_ohn()
+        #     case 4:
+        #         what_the.johio_ohn()
+        #     case _:
+        #         what_the.johio_ohn()
+
+
+        pass
+
 
     def bank_trade(self, action: RollAction):
         if not self.has_rolled:

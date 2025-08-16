@@ -111,7 +111,7 @@ class Board:
                         numbers[tile_idx]
                     ))
                     if resources[tile_idx] == Resource.DESERT:
-                        self.robber_coords = cur_tile_coords.copy()
+                        self.robber_tile = self.tiles[tile_idx]
 
                     tile_idx += 1
                     
@@ -214,6 +214,15 @@ class Board:
                     adj.append(self.tile_dict[hash].index)
             Board.node_tile_list.append(adj)
         
+        Board.tile_node_list: list[list[int]] = []
+        for tile in self.tiles:
+            adj = []
+            for coords in tile.adj_node_coords():
+                hash = Board.coords_hash(coords)
+                if hash in self.node_dict.keys():
+                    adj.append(self.node_dict[hash].index)
+            Board.tile_node_list.append(adj)
+        
         Board.adj_lists_set = True
 
         
@@ -287,12 +296,13 @@ class Board:
         return False
 
     def move_robber(self, coords):
-        if self.robber_coords == coords:
+        if self.robber_tile.coords == coords:
             return False
         tile: Tile = self.tile_dict.get(Board.coords_hash(coords), None)
         if tile is None:
             return False
-        self.robber_coords = coords
+        self.robber_tile = tile
+        return True
         
 
     @staticmethod

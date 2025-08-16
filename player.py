@@ -38,5 +38,18 @@ class Player:
         self.has_longest_road = False
         self.has_largest_army = False
 
-        
+    def gen_resources(self, roll_n):
+        resource_gain = self.resources_gen[roll_n]
+        resource_block = self.resources_block[roll_n]
+        for resource in Resource:
+            if resource != Resource.DESERT:
+                self.resources[resource] += resource_gain[resource] - resource_block[resource]
+
+    def reset_resource_block(self):
+        for roll in range(2, 13):
+            if roll == 7:
+                continue
+            for resource in Resource:
+                if resource != Resource.DESERT:
+                    self.resources_block[roll][resource] = 0
             

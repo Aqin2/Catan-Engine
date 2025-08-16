@@ -1,4 +1,5 @@
 from globals import *
+from player import Player
 import numpy as np
 
 class Entity:
@@ -31,7 +32,7 @@ class Node(Entity):
         else:
             raise ValueError(f'Invalid node coordinates: {self.coords}')
     
-    def place_structure(self, player: str, value: int):
+    def place_structure(self, player: Player, value: int):
         self.player = player
         self.value = value
 
@@ -95,10 +96,22 @@ class Edge(Entity):
 
 
 class Tile(Entity):
+    NODE_OFFSETS = [
+        Direction.Q,
+        Direction.NS,
+        Direction.R,
+        Direction.NQ,
+        Direction.S,
+        Direction.NR
+    ]
+
     def __init__(self, coords, index, resource: Resource, number: int):
         super().__init__(coords, index)
         self.resource = resource
         self.number = number
+
+    def adj_node_coords(self):
+        return [ self.coords + offset for offset in Tile.NODE_OFFSETS ]
 
 class Port(Entity):
     def __init__(self, coords, index, resource: Resource, dirs: tuple[np.ndarray]):
