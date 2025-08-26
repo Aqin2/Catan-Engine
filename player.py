@@ -1,5 +1,4 @@
 from globals import *
-from catan import DevType
 from copy import copy
 
 

@@ -44,14 +44,12 @@ class Board:
         2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12
     ]
     PORTS = [
-        [
-            (0, None), (2, Resource.WOOL),
-            (1, None),
-            (0, None), (2, Resource.BRICK),
-            (1, Resource.WOOD),
-            (0, None), (2, Resource.WHEAT),
-            (1, Resource.ORE)
-        ]
+        [(0, None), (2, Resource.WOOL)],
+        [(1, None)],
+        [(0, None), (2, Resource.BRICK)],
+        [(1, Resource.WOOD)],
+        [(0, None), (2, Resource.WHEAT)],
+        [(1, Resource.ORE)]
     ]
 
     adj_lists_set = False
@@ -75,7 +73,7 @@ class Board:
         self.random.shuffle(numbers)
         self.random.shuffle(port_data)
 
-        desert_idx = self.random.randint(19)
+        desert_idx = self.random.integers(19)
         resources = np.insert(resources, desert_idx, None)
         numbers = np.insert(resources, desert_idx, -1)
         
