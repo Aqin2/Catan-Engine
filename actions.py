@@ -2,18 +2,18 @@ from globals import DevType, Resource
 from enum import Enum
 
 class ActionType(Enum):
-    end_turn = 0
-    structure = 1
-    road = 2
-    play_dev = 3
-    buy_dev = 4
-    roll = 5
-    bank_trade = 6
-    player_trade = 7 #not implemented
-    move_robber = 8
-    steal = 9
-    monopoly = 10
-    invention = 11
+    end_turn = 'end_turn'
+    structure = 'structure'
+    road = 'road'
+    play_dev = 'play_dev'
+    buy_dev = 'buy_dev'
+    roll = 'roll'
+    bank_trade = 'bank_trade'
+    player_trade = 'player_trade' #not implemented
+    move_robber = 'move_robber'
+    steal = 'steal'
+    monopoly = 'monopoly'
+    invention = 'invention'
 
 class Action:
     def __init__(self, type: ActionType):
@@ -72,3 +72,25 @@ class InventionAction(Action):
 class EndTurnAction(Action):
     def __init__(self):
         super().__init__(ActionType.end_turn)
+
+ACTION_TYPES = {
+    ActionType.end_turn: EndTurnAction,
+    ActionType.structure: StructureAction,
+    ActionType.road: RoadAction,
+    ActionType.play_dev: PlayDevAction,
+    ActionType.buy_dev: BuyDevAction,
+    ActionType.roll: RollAction,
+    ActionType.bank_trade: BankTradeAction,
+    #ActionType.player_trade: PlayerTradeAction,
+    ActionType.move_robber: MoveRobberAction,
+    ActionType.steal: StealAction,
+    ActionType.monopoly: MonopolyAction,
+    ActionType.invention: InventionAction
+}
+
+def create_action(type: str | ActionType, kwargs: dict[str]):
+    try:
+        action_class = ACTION_TYPES[ActionType(type)]
+        return action_class(**kwargs)
+    except:
+        return None

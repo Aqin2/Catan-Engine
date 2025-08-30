@@ -3,6 +3,7 @@ from entities import *
 import numpy as np
 from copy import copy
 from player import Player
+import json
 
 class Board:
     BOARD_SIZE = 3
@@ -38,18 +39,18 @@ class Board:
         (Direction.NS, Direction.Q),
         (Direction.R, Direction.NS)
     ]
-    RESOURCES = [Resource.BRICK] * 3 + [Resource.WOOD] * 4 + [Resource.WOOL] * 4 \
-        + [Resource.WHEAT] * 4 + [Resource.ORE] * 3
+    RESOURCES = [Resource.brick] * 3 + [Resource.wood] * 4 + [Resource.wool] * 4 \
+        + [Resource.wheat] * 4 + [Resource.ore] * 3
     NUMBERS = [
         2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12
     ]
     PORTS = [
-        [(0, None), (2, Resource.WOOL)],
+        [(0, None), (2, Resource.wool)],
         [(1, None)],
-        [(0, None), (2, Resource.BRICK)],
-        [(1, Resource.WOOD)],
-        [(0, None), (2, Resource.WHEAT)],
-        [(1, Resource.ORE)]
+        [(0, None), (2, Resource.brick)],
+        [(1, Resource.wood)],
+        [(0, None), (2, Resource.wheat)],
+        [(1, Resource.ore)]
     ]
 
     adj_lists_set = False
@@ -301,7 +302,32 @@ class Board:
             return False
         self.robber_tile = tile
         return True
+
+    '''
+    returns a json-serializable python obj.
+
+    json obj format:
+    {
+        tiles: (string | null)[], //resource type or null for desert
+        edges: (string | null)[], //player road name or null for no road
+
+        nodes: { player: string | null, value: int }[]
+        //player structure name or null for no structure,
+        //value = 0 for none, 1 for settlement, 2 for city
+
+        //the tile/edge/node with id i will be arr[i] for the respective array arr
+    }
+    '''
+    def to_json_obj(self):
+        obj = dict()
+
+        obj['tiles'] = [ tile.resource.value if tile.resource else None for tile in self.tiles ]
+        obj['edges'] = [ edge.player for edge in self.edges ]
+        obj['nodes'] = [
+            { 'player': node.player, 'value': node.value } for node in self.nodes
+        ]
         
+        return obj
 
     @staticmethod
     def coords_hash(coords):

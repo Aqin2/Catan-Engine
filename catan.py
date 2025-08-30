@@ -1,6 +1,7 @@
 from enum import Enum
 from collections import deque
 from copy import copy
+import json
 
 from globals import *
 from entities import *
@@ -11,23 +12,23 @@ from player import Player
 class Game:
     roll_p = np.convolve(np.full((6,), 1 / 6), np.full((6,), 1 / 6))
     SETTLEMENT_COST = {
-        Resource.BRICK: 1,
-        Resource.WOOD: 1,
-        Resource.WOOL: 1,
-        Resource.WHEAT: 1
+        Resource.brick: 1,
+        Resource.wood: 1,
+        Resource.wool: 1,
+        Resource.wheat: 1
     }
     CITY_COST = {
-        Resource.WHEAT: 2,
-        Resource.ORE: 3,
+        Resource.wheat: 2,
+        Resource.ore: 3,
     }
     ROAD_COST = {
-        Resource.BRICK: 1,
-        Resource.WOOD: 1
+        Resource.brick: 1,
+        Resource.wood: 1
     }
     DEV_CARD_COST = {
-        Resource.WOOL: 1,
-        Resource.WHEAT: 1,
-        Resource.ORE: 1
+        Resource.wool: 1,
+        Resource.wheat: 1,
+        Resource.ore: 1
     }
     DEV_CARDS = [DevType.knight] * 14 + [DevType.victory_point] * 5 + [DevType.monopoly] * 2 + \
         [DevType.road_build] * 2 + [DevType.monopoly] * 2
@@ -42,13 +43,13 @@ class Game:
        
         #start, prod, or action
         self.step_fn = self.step_start
-        self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.players) * 2)
+        self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.player_names) * 2)
 
         #player info
         self.players: dict[str, Player] = dict()
         for player in self.player_names:
             self.players[player] = Player(player)
-        self.cur_player = self.players[0]
+        self.cur_player = self.players[self.player_names[0]]
         self.cur_player_idx = 0
 
         #current player info for current turn
@@ -71,8 +72,8 @@ class Game:
 
         self.victory_callback = victory_callback    
     
-    def step(self, *args):
-        r = self.step_fn(args)
+    def step(self, action: Action):
+        r = self.step_fn(action)
         return r
 
     def step_start(self, action: Action):
@@ -432,3 +433,26 @@ class Game:
 
     def get_roll_n(self):
         return self.random.choice([i for i in range(2, 13)], p=Game.roll_p)
+    
+    '''
+    json obj format:
+    {
+        cur_player: string //which player's turn it is
+        expected_action: string | null, //the next action expected or null for no specific action
+        board: Board, //(see board.py)
+
+        //TODO: implement this
+        players: {
+            [player_name]: {
+                
+            }
+        }
+    }
+    '''
+    def to_json_obj(self):
+        obj = dict()
+        obj['cur_player'] = self.cur_player.name
+        obj['expeted_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
+        obj['board'] = self.board.to_json_obj()
+
+        return obj

@@ -2,11 +2,11 @@ import numpy as np
 from enum import Enum
 
 class Resource(Enum):
-    BRICK =  0
-    WOOD =  1
-    WOOL = 2
-    WHEAT =  3
-    ORE = 4
+    brick = 'brick'
+    wood =  'wood'
+    wool = 'wool'
+    wheat = 'wheat'
+    ore = 'ore'
 
 class Direction():
     #dirs from center of tile to corner of tile
@@ -26,9 +26,9 @@ class Direction():
     NSQ = -SQ
 
 class DevType(Enum):
-    knight = 0
-    monopoly = 1
-    road_build = 2
-    invention = 3
+    knight = 'knight'
+    monopoly = 'monopoly'
+    road_build = 'road_build'
+    invention = 'invention'
 
-    victory_point = 4
+    victory_point = 'victory_point'
