@@ -3,20 +3,20 @@ import BoardEdge from "./BoardEdge";
 import BoardNode from "./BoardNode";
 import coords from "./coords.json";
 
-import brick from './assets/brick.png';
-import wood from './assets/wood.png';
-import wool from './assets/wool.png';
-import wheat from './assets/wheat.png';
-import ore from './assets/ore.png';
-import desert from './assets/desert.png';
+import tile_brick from './assets/tile_brick.svg';
+import tile_wood from './assets/tile_wood.svg';
+import tile_sheep from './assets/tile_sheep.svg';
+import tile_wheat from './assets/tile_wheat.svg';
+import tile_ore from './assets/tile_ore.svg';
+import tile_desert from './assets/tile_desert.svg';
 
 const assets = [
-  brick,
-  wood,
-  wool,
-  wheat,
-  ore,
-  desert
+  tile_brick,
+  tile_wood,
+  tile_sheep,
+  tile_wheat,
+  tile_ore,
+  tile_desert
 ];
 
 interface BoardProps {
