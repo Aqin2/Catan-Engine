@@ -7,7 +7,8 @@ interface BoardEdgeProps {
   y2: number,
   stroke: string,
   strokeWidth: number,
-  hitWidth?: number
+  hitWidth?: number,
+  onClick?: () => void,
 };
 
 const BoardEdge: React.FC<BoardEdgeProps> = ({
@@ -17,7 +18,8 @@ const BoardEdge: React.FC<BoardEdgeProps> = ({
   y2,
   stroke,
   strokeWidth,
-  hitWidth = strokeWidth * 2
+  hitWidth = strokeWidth * 2,
+  onClick = () => { return; }
 }) => {
 
   return <g style={{
@@ -38,7 +40,7 @@ const BoardEdge: React.FC<BoardEdgeProps> = ({
       y2={y2}
       stroke='transparent'
       strokeWidth={hitWidth}
-      onClick={() => console.log('edge clicked')}
+      onClick={() => onClick()}
     />
   </g>
 }

@@ -5,7 +5,8 @@ interface BoardNodeProps {
   hitRad?: number,
   cx: number,
   cy: number,
-  fill: string
+  fill: string,
+  onClick?: () => void
 }
 
 const BoardNode: React.FC<BoardNodeProps> = ({
@@ -13,7 +14,8 @@ const BoardNode: React.FC<BoardNodeProps> = ({
   hitRad = rad * 2,
   cx,
   cy,
-  fill
+  fill,
+  onClick = () => { return; }
 }) => {
   return <g>
     <circle
@@ -27,7 +29,7 @@ const BoardNode: React.FC<BoardNodeProps> = ({
       cx={cx}
       cy={cy}
       fill='transparent'
-      onClick={() => console.log('node clicked')}
+      onClick={() => onClick()}
     />
   </g>
 }

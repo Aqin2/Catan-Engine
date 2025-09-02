@@ -451,6 +451,7 @@ class Game:
     '''
     def to_json_obj(self):
         obj = dict()
+        obj['players'] = self.player_names
         obj['cur_player'] = self.cur_player.name
         obj['expeted_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
         obj['board'] = self.board.to_json_obj()

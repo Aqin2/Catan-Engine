@@ -308,7 +308,7 @@ class Board:
 
     json obj format:
     {
-        tiles: (string | null)[], //resource type or null for desert
+        tiles: (string)[], //resource type or null for desert
         edges: (string | null)[], //player road name or null for no road
 
         nodes: { player: string | null, value: int }[]
@@ -321,7 +321,7 @@ class Board:
     def to_json_obj(self):
         obj = dict()
 
-        obj['tiles'] = [ tile.resource.value if tile.resource else None for tile in self.tiles ]
+        obj['tiles'] = [ tile.resource.value if tile.resource else 'desert' for tile in self.tiles ]
         obj['edges'] = [ edge.player for edge in self.edges ]
         obj['nodes'] = [
             { 'player': node.player, 'value': node.value } for node in self.nodes
