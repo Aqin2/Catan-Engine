@@ -10,6 +10,8 @@ import wheat from './assets/tile_wheat.svg';
 import ore from './assets/tile_ore.svg';
 import desert from './assets/tile_desert.svg';
 
+import type { game } from './types';
+
 interface BoardProps {
   width: number
 };
