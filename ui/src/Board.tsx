@@ -3,14 +3,16 @@ import BoardEdge from "./BoardEdge";
 import BoardNode from "./BoardNode";
 import coords from "./coords.json";
 
-import brick from './assets/brick.png';
-import wood from './assets/wood.png';
-import wool from './assets/wool.png';
-import wheat from './assets/wheat.png';
-import ore from './assets/ore.png';
-import desert from './assets/desert.png';
-import { useEffect, useState } from "react";
-import type { board, game } from './types';
+import brick from './assets/tile_brick.svg';
+import wood from './assets/tile_wood.svg';
+import wool from './assets/tile_sheep.svg';
+import wheat from './assets/tile_wheat.svg';
+import ore from './assets/tile_ore.svg';
+import desert from './assets/tile_desert.svg';
+
+interface BoardProps {
+  width: number
+};
 
 const tile_images = {
   'brick': brick,
@@ -27,7 +29,6 @@ const player_colors = [
   'lightgray', //white
   'orange'
 ]
-
 const tile_coords = coords.tile_coords;
 const edge_endpoints = coords.edge_endpoints;
 const node_coords = coords.node_coords;
