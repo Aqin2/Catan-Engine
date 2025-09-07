@@ -75,7 +75,7 @@ class Edge(Entity):
         assert len(i[0]) == 1, f'Invalid edge coordinates: {self.coords}'
         self.dir = i[0][0]
 
-    def place_road(self, player: str):
+    def place_road(self, player: Player):
         self.player = player
 
     def adj_edge_coords(self):

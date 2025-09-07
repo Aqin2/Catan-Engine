@@ -46,10 +46,8 @@ class Game:
         self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.player_names) * 2)
 
         #player info
-        self.players: dict[str, Player] = dict()
-        for player in self.player_names:
-            self.players[player] = Player(player)
-        self.cur_player = self.players[self.player_names[0]]
+        self.players = [Player(name) for name in player_names]
+        self.cur_player = self.players[0]
         self.cur_player_idx = 0
 
         #current player info for current turn
@@ -84,22 +82,23 @@ class Game:
         if action.type == ActionType.structure:
             if action.value != 1:
                 return False
-            r = self.place_structure(self, action, starting=True)
+            r = self.place_structure(action, starting=True)
             if r:
                 self.action_queue.popleft()
 
         if action.type == ActionType.road:
-            r = self.place_road(self, action, starting=True)
+            r = self.place_road(action, starting=True)
             if r:
                 self.action_queue.popleft()
                 if len(self.action_queue) == 0:
                     self.step_fn = self.step_main
-                elif len(self.action_queue) <= len(self.players) * 2:
+                elif len(self.action_queue) < len(self.players) * 2:
                     #exactly halfway, reverse order
                     self.advance_player(increment=-1)
-                else:
+                
+                elif len(self.action_queue) > len(self.players) * 2:
                     self.advance_player()
-
+        
         return r
     
     def step_main(self, action: Action):
@@ -185,7 +184,7 @@ class Game:
         if (not starting) and (not self.has_rolled):
             return False
         
-        if self.road_dev_count == 0:
+        if self.road_dev_count == 0 and not starting:
             if not self.pay_cost(Game.ROAD_COST):
                 return False
             
@@ -261,9 +260,9 @@ class Game:
         gen_players: dict[str, list[Player]] = dict()
         for resource in Resource:
             total_gen[resource] = 0
-            gen_players = []
+            gen_players[resource] = []
 
-        for player in self.players.values():
+        for player in self.players:
             for resource in Resource:
                 gen = player.resources_gen[roll_n][resource] - player.resources_block[roll_n][resource]
                 if gen > 0:
@@ -305,7 +304,7 @@ class Game:
             self.action_queue.append(ActionType.steal)
 
         #recalculate blocked resources
-        for player in self.players.values():
+        for player in self.players:
             player.reset_resource_block()
         
         if robber_tile.resource is None:
@@ -357,7 +356,7 @@ class Game:
             #might still be allowed if player is dumb
             return False
         
-        for player in self.players.values():
+        for player in self.players:
             if player != self.cur_player:
                 self.cur_player.resources[action.resource] += player.resources[action.resource]
                 player.resources[action.resource] = 0
@@ -383,21 +382,22 @@ class Game:
     def bank_trade(self, action: RollAction):
         if not self.has_rolled:
             return False
+        return False
                 
     def pay_cost(self, cost: dict[Resource, int]):
         for resource in Resource:
-            if self.cur_player[resource] < cost[resource]:
+            if self.cur_player.resources[resource] < cost[resource]:
                 return False
                 
         for resource in Resource:
-            self.cur_player[resource] -= cost[resource]
+            self.cur_player.resources[resource] -= cost[resource]
             self.resources[resource] += cost[resource]
 
         return True
     
     def check_largest_army(self):
         new_largest_army = None
-        for player in self.players.values():
+        for player in self.players:
             if player.num_knights_played < 3:
                 continue
 
@@ -412,7 +412,7 @@ class Game:
             
 
     def check_victory(self):
-        for player in self.players.values():
+        for player in self.players:
             player.calculate_victory_points()
             if player.victory_points >= 10:
                 self.victory_callback()
@@ -453,7 +453,7 @@ class Game:
         obj = dict()
         obj['players'] = self.player_names
         obj['cur_player'] = self.cur_player.name
-        obj['expeted_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
+        obj['expected_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
         obj['board'] = self.board.to_json_obj()
 
         return obj

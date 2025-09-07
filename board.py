@@ -76,7 +76,7 @@ class Board:
 
         desert_idx = self.random.integers(19)
         resources = np.insert(resources, desert_idx, None)
-        numbers = np.insert(resources, desert_idx, -1)
+        numbers = np.insert(numbers, desert_idx, -1)
         
         #add initial tiles, edges and nodes
         cur_tile_coords = np.array([0, 0, 0])
@@ -322,9 +322,9 @@ class Board:
         obj = dict()
 
         obj['tiles'] = [ tile.resource.value if tile.resource else 'desert' for tile in self.tiles ]
-        obj['edges'] = [ edge.player for edge in self.edges ]
+        obj['edges'] = [ edge.player.name if edge.player else None for edge in self.edges ]
         obj['nodes'] = [
-            { 'player': node.player, 'value': node.value } for node in self.nodes
+            { 'player': node.player.name if node.player else None, 'value': node.value } for node in self.nodes
         ]
         
         return obj

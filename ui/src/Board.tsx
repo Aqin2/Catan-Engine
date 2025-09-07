@@ -42,6 +42,7 @@ const xy_coords = (qrs_coords: number[], scale: number) => {
 }
 
 interface BoardProps {
+  game?: game,
   width: number,
   onTileClick: (coords: number[]) => void,
   onEdgeClick: (coords: number[]) => void,
@@ -49,27 +50,13 @@ interface BoardProps {
 };
 
 const Board: React.FC<BoardProps> = ({
+  game,
   width,
   onTileClick,
   onEdgeClick,
   onNodeClick
 }) => {
   const scale = width / 30;
-  const [game, setGame] = useState<game | null>(null);
-
-
-  useEffect(() => {
-    const fetch_board = async () => { 
-      try {
-        const response = await fetch('http://localhost:8000/', {method: 'GET'});
-        const result = await response.json();
-        setGame(result);
-      } catch (err) {
-        console.log('uh oh');
-      }
-    };
-    fetch_board();
-  }, []);
 
   if (!game)
     return <></>;
