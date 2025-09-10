@@ -321,11 +321,18 @@ class Board:
     def to_json_obj(self):
         obj = dict()
 
-        obj['tiles'] = [ tile.resource.value if tile.resource else 'desert' for tile in self.tiles ]
+        obj['tiles'] = [
+            {
+                'resource': tile.resource.value if tile.resource else 'desert',
+                'number': int(tile.number)
+            }
+            for tile in self.tiles
+        ]
         obj['edges'] = [ edge.player.name if edge.player else None for edge in self.edges ]
         obj['nodes'] = [
             { 'player': node.player.name if node.player else None, 'value': node.value } for node in self.nodes
         ]
+        obj['robber_tile'] = int(self.robber_tile.index)
         
         return obj
 

@@ -1,9 +1,13 @@
-
+export interface tile {
+    resource: 'brick' | 'wood' | 'wood' | 'wheat' | 'ore' | 'desert',
+    number: number
+}
 
 export interface board {
-    tiles: ('brick' | 'wood' | 'wood' | 'wheat' | 'ore' | 'desert')[],
+    tiles: tile[],
     edges: (string | null)[],
-    nodes: { player: string | null, value: number }[]
+    nodes: { player: string | null, value: number }[],
+    robber_tile: number
 }
 
 export interface game {

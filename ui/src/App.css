@@ -17,3 +17,13 @@
 .game-button.selected {
   border: 2px solid blue !important;
 }
+
+.game-number-text {
+  font-size: 24px;
+  font-weight: bold;
+  fill: black;
+}
+
+.game-number-text.red {
+  fill: red;
+}

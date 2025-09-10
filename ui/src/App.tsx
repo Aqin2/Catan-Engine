@@ -3,7 +3,7 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 import Board from './Board'
 import GameButton from './GameButton'
 import { useState, useEffect } from 'react'
-import type { game, board } from './types' 
+import type { game } from './types' 
 import { Button } from 'react-bootstrap'
 
 

@@ -3,27 +3,12 @@ import BoardEdge from "./BoardEdge";
 import BoardNode from "./BoardNode";
 import coords from "./coords.json";
 
-import brick from './assets/tile_brick.svg';
-import wood from './assets/tile_wood.svg';
-import wool from './assets/tile_sheep.svg';
-import wheat from './assets/tile_wheat.svg';
-import ore from './assets/tile_ore.svg';
-import desert from './assets/tile_desert.svg';
-
 import type { game } from './types';
+import BoardTile from "./BoardTile";
 
 interface BoardProps {
   width: number
 };
-
-const tile_images = {
-  'brick': brick,
-  'wood': wood,
-  'wool': wool,
-  'wheat': wheat,
-  'ore': ore,
-  'desert': desert
-}
 
 const player_colors = [
   'blue',
@@ -74,18 +59,16 @@ const Board: React.FC<BoardProps> = ({
     }}>
     {tile_coords.map((coords, i) => {
       const width = scale * 6;
-      const height = scale * 6 / SIN_60;
       const [x, y] = xy_coords(coords, scale);
 
-      return <image
+      return <BoardTile
         key={`tile_${i}`}
-        className='game-tile'
-        href={tile_images[game.board.tiles[i]]}
-        x={x - width / 2}
-        y={y - height / 2}
+        x={x}
+        y={y}
         width={width}
-        height={height}
-        onClick={() => {onTileClick(coords)}}
+        tile={game.board.tiles[i]}
+        has_robber={game.board.robber_tile == i}
+        onTileClick={() => onTileClick(coords)}
       />
     })}
     {edge_endpoints.map((endpoints, i) => {
@@ -97,7 +80,6 @@ const Board: React.FC<BoardProps> = ({
       if (game.board.edges[i]) {
         color = player_colors[game.players.indexOf(game.board.edges[i])]
       }
-
 
       return <BoardEdge
         key={`edge_${i}`}
