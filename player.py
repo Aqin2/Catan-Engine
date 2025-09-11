@@ -7,7 +7,7 @@ class Player:
         self.name = name
         
         self.bank_trade_rates = dict()
-        self.resources = dict()
+        self.resources: dict[Resource, int] = dict()
         for resource in Resource:
             self.bank_trade_rates[resource] = 4
             self.resources[resource] = 0
@@ -27,7 +27,7 @@ class Player:
         self.n_settlements = 0
         self.n_cities = 0
 
-        self.dev_cards = dict()
+        self.dev_cards: dict[DevType, int] = dict()
         self.dev_cards_cur_turn = dict()
         for dev_type in DevType:
             self.dev_cards[dev_type] = 0
@@ -56,4 +56,10 @@ class Player:
         victory_points += self.dev_cards[DevType.victory_point] * 1
         
         self.victory_points = victory_points
+
+    def to_json_obj(self):
+        return {
+            'resources': {resource.value: count for resource, count in self.resources.items()},
+            'dev_cards': {card.value: count for card, count in self.dev_cards.items()}
+        }
             

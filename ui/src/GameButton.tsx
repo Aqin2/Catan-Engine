@@ -3,12 +3,14 @@ import { Button } from "react-bootstrap";
 
 interface GameButtonProps {
     name: string,
-    selected: boolean,
+    id: string,
+    selected: string | null,
     setSelected: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 const GameButton: React.FC<GameButtonProps> = ({
     name,
+    id,
     selected,
     setSelected
 }) => {
@@ -16,8 +18,8 @@ const GameButton: React.FC<GameButtonProps> = ({
 
     return <Button
         variant='outline-light'
-        className={'me-2 game-button' + (selected ? ' selected' : '')}
-        onClick={() => setSelected(name)}>
+        className={'me-2 game-button' + (selected == id ? ' selected' : '')}
+        onClick={() => setSelected(id)}>
             {name}
     </Button>
 }

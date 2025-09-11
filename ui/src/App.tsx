@@ -14,30 +14,51 @@ function App() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [game, setGame] = useState<game | null>(null);
 
-  const onEdgeClick = (coords: number[]) => {
-    if (selected == 'Road') {
-      if (socket?.readyState == WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          'action_type': 'road',
-          'kwargs': {
-            'coords': coords
-          }
-        }));
-      }
-    }
+  const onTileClick = (coords: number[]) => {
+    switch(selected) {
+      case 'robber':
+        if (socket?.readyState == WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            'action_type': 'move_robber',
+            'kwargs': {
+              'coords': coords
+            }
+          }));
+        }
+      break;
+    } 
   }
 
+  const onEdgeClick = (coords: number[]) => {
+    switch(selected) {
+      case 'road':
+        if (socket?.readyState == WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            'action_type': 'road',
+            'kwargs': {
+              'coords': coords
+            }
+          }));
+        }
+      break;
+    }    
+  }
+  
+
   const onNodeClick = (coords: number[]) => {
-    if (selected == 'Settlement' || selected == 'City') {
-      if (socket?.readyState == WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          'action_type': 'structure',
-          'kwargs': {
-            'coords': coords,
-            'value': selected == 'Settlement' ? 1 : 2
-          }
-        }));
-      }
+    switch(selected) {
+      case 'settlement':
+      case 'city':
+        if (socket?.readyState == WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            'action_type': 'structure',
+            'kwargs': {
+              'coords': coords,
+              'value': selected == 'settlement' ? 1 : 2
+            }
+          }));
+        }
+      break;
     }
   }
 
@@ -68,14 +89,15 @@ function App() {
       <Board
         game={game ? game : undefined}
         width={600}
-        onTileClick={(coords) => console.log('clicked tile ' + coords)}
+        onTileClick={(coords) => onTileClick(coords)}
         onEdgeClick={(coords) => onEdgeClick(coords)} 
         onNodeClick={(coords) => onNodeClick(coords)}
       />
       <div>
-        <GameButton name={'Road'} selected={selected == 'Road'} setSelected={setSelected}/>
-        <GameButton name={'Settlement'} selected={selected == 'Settlement'} setSelected={setSelected}/>
-        <GameButton name={'City'} selected={selected == 'City'} setSelected={setSelected}/>
+        <GameButton name={'Road'} id={'road'} selected={selected} setSelected={setSelected}/>
+        <GameButton name={'Settlement'} id={'settlement'} selected={selected} setSelected={setSelected}/>
+        <GameButton name={'City'} id={'city'} selected={selected} setSelected={setSelected}/>
+        <GameButton name={'Move Robber'} id={'robber'} selected={selected} setSelected={setSelected}/>
       </div>
       <div>
         <Button variant='outline-light' className='me-2 game-button' onClick={() => {
@@ -100,6 +122,23 @@ function App() {
             }));
         }}>Buy Dev Card</Button>
       </div>
+      {game ? <div>
+        {Object.entries(game.players).map(([name, player], i) => {
+          return <div key={`player_${i}`}>
+            <h1>{name}</h1>
+            <p>
+              {JSON.stringify(player.resources)} 
+            </p>
+            <p>
+              {JSON.stringify(player.dev_cards)}
+            </p>
+          </div>
+        })}
+
+
+      </div> : <></>}
+      
+
     </div>
   )
 }

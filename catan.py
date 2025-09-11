@@ -103,14 +103,14 @@ class Game:
     
     def step_main(self, action: Action):
         use_queue = len(self.action_queue) > 0
-
-        cur_action = self.action_queue[0] if use_queue else action
-        if action.type != cur_action.type:
-            return False
+        
+        if use_queue:
+            if action.type != self.action_queue[0]:
+                return False
 
         r = False
         
-        match cur_action.type:
+        match action.type:
             case ActionType.end_turn:
                 if self.has_rolled:
                     self.advance_player()
@@ -285,7 +285,7 @@ class Game:
 
             
     def move_robber(self, action: MoveRobberAction):
-        r = self.board.move_robber(action.tile_coords)
+        r = self.board.move_robber(action.coords)
         if not r:
             return False
         
@@ -451,9 +451,10 @@ class Game:
     '''
     def to_json_obj(self):
         obj = dict()
-        obj['players'] = self.player_names
+        obj['player_names'] = self.player_names
         obj['cur_player'] = self.cur_player.name
         obj['expected_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
         obj['board'] = self.board.to_json_obj()
+        obj['players'] = {player.name: player.to_json_obj() for player in self.players}
 
         return obj

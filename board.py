@@ -82,6 +82,8 @@ class Board:
         cur_tile_coords = np.array([0, 0, 0])
 
         self.tiles = [ Tile(cur_tile_coords.copy(), 0, resources[0], numbers[0]) ]
+        self.robber_tile = self.tiles[0]
+
         self.edges = [
             Edge(
                 cur_tile_coords + edge_offset, 
@@ -295,10 +297,10 @@ class Board:
         return False
 
     def move_robber(self, coords):
-        if self.robber_tile.coords == coords:
-            return False
         tile: Tile = self.tile_dict.get(Board.coords_hash(coords), None)
         if tile is None:
+            return False
+        if self.robber_tile == tile:
             return False
         self.robber_tile = tile
         return True

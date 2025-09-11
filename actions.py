@@ -50,9 +50,9 @@ class BankTradeAction(Action):
         self.trade_for = trade_for
 
 class MoveRobberAction(Action):
-    def __init__(self, tile_coords):
+    def __init__(self, coords):
         super().__init__(ActionType.move_robber)
-        self.tile_coords = tile_coords
+        self.coords = coords
 
 class StealAction(Action):
     def __init__(self, player):

@@ -78,7 +78,7 @@ const Board: React.FC<BoardProps> = ({
 
       let color = 'black'
       if (game.board.edges[i]) {
-        color = player_colors[game.players.indexOf(game.board.edges[i])]
+        color = player_colors[game.player_names.indexOf(game.board.edges[i])]
       }
 
       return <BoardEdge
@@ -96,7 +96,7 @@ const Board: React.FC<BoardProps> = ({
       const [cx, cy] = xy_coords(coords, scale);
       let color = 'black'
       if (game.board.nodes[i].player) {
-        color = player_colors[game.players.indexOf(game.board.nodes[i].player)]
+        color = player_colors[game.player_names.indexOf(game.board.nodes[i].player)]
       }
 
       return <BoardNode
