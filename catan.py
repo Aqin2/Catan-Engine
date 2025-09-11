@@ -1,7 +1,7 @@
 from enum import Enum
 from collections import deque
 from copy import copy
-import json
+import time
 
 from globals import *
 from entities import *
@@ -34,12 +34,22 @@ class Game:
         [DevType.road_build] * 2 + [DevType.monopoly] * 2
 
 
-    def __init__(self, player_names: list[str], seed=None, victory_callback=None):
-        self.random = np.random.default_rng(seed=seed)
+    def __init__(self, player_names: list[str], seed=None, record_log=False, victory_callback=None):
+        self.record_log = record_log
+        self.logs = []
+        self.log = lambda x: self.logs.append(x) if self.record_log else None
+
+        
         self.player_names = player_names
         self.seed = seed
-
-        self.board = Board(seed=seed)
+        if self.seed == None:
+            self.seed = time.time_ns()
+            self.log(f'no seed specified, using seed {self.seed}')
+        
+        self.victory_callback = victory_callback
+        self.random = np.random.default_rng(seed=self.seed)
+        
+        self.board = Board(seed=self.seed)
        
         #start, prod, or action
         self.step_fn = self.step_start
@@ -68,8 +78,6 @@ class Game:
         self.dev_cards = copy(Game.DEV_CARDS)
         self.random.shuffle(self.dev_cards)
 
-        self.victory_callback = victory_callback    
-    
     def step(self, action: Action):
         r = self.step_fn(action)
         return r
@@ -291,6 +299,7 @@ class Game:
         
         robber_tile = self.board.robber_tile
         n_steal = 0
+        player = None
         for node_idx in Board.tile_node_list[robber_tile.index]:
             node = self.board.nodes[node_idx]
             #must have a player and must not be self
@@ -298,10 +307,16 @@ class Game:
                 #and must have at least 1 resource
                 if np.any(node.player.resources.values()):
                     n_steal += 1
+                    player = node.player
+
+        if self.played_knight:
+            self.cur_player.num_knights_played += 1
 
         #only add steal action if more than 1 eligible player to steal from
         if n_steal > 1:
             self.action_queue.append(ActionType.steal)
+        elif n_steal == 1:
+            self.steal(self, StealAction(player))
 
         #recalculate blocked resources
         for player in self.players:
@@ -315,10 +330,6 @@ class Game:
             node = self.board.nodes[node_idx]
             if node.player:
                 node.player.resources_block[robber_tile.number][robber_tile.resource] += node.value
-        
-        if self.played_knight:
-            self.cur_player.num_knights_played += 1
-
 
         return True
     

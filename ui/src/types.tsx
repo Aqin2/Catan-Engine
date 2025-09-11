@@ -15,8 +15,8 @@ export interface board {
 
 
 export interface player {
-    resources: {[key in resource]: number}
-    dev_cards: {[key in dev_type]: number}
+    resources: { [key in resource]: number }
+    dev_cards: { [key in dev_type]: number }
 };
 
 export interface game {
@@ -24,5 +24,5 @@ export interface game {
     cur_player: string,
     expected_action?: string,
     board: board,
-    players: {[key: string]: player}
+    players: { [key: string]: player }
 };
