@@ -7,7 +7,7 @@ import wool from './assets/tile_sheep.svg';
 import wheat from './assets/tile_wheat.svg';
 import ore from './assets/tile_ore.svg';
 import desert from './assets/tile_desert.svg';
-import robber from './assets/robber.png';
+import robber from './assets/robber.svg';
 
 const tile_images = {
   'brick': brick,
