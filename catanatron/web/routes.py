@@ -2,7 +2,7 @@ from flask import jsonify, request
 from catanatron.web import app, db
 
 # Import the game logic
-from catan import Resource, Node, Direction
+from game import Resource, Node, Direction
 
 @app.route('/api/games', methods=['POST'])
 def create_game():

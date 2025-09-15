@@ -14,6 +14,7 @@ class ActionType(Enum):
     steal = 'steal'
     monopoly = 'monopoly'
     invention = 'invention'
+    discard = 'discard'
 
 class Action:
     def __init__(self, type: ActionType):
@@ -44,7 +45,7 @@ class RollAction(Action):
         super().__init__(ActionType.roll)
 
 class BankTradeAction(Action):
-    def __init__(self, trade_in, trade_for):
+    def __init__(self, trade_in: dict[Resource, int], trade_for: dict[Resource, int]):
         super().__init__(ActionType.bank_trade)
         self.trade_in = trade_in
         self.trade_for = trade_for
@@ -68,6 +69,11 @@ class InventionAction(Action):
     def __init__(self, resources: dict[Resource, int]):
         super().__init__(ActionType.invention)
         self.resources = resources
+    
+class DiscardAction(Action):
+    def __init__(self, resources: dict[Resource, int]):
+        super().__init__(ActionType.discard)
+        self.resources = resources
 
 class EndTurnAction(Action):
     def __init__(self):
@@ -85,7 +91,8 @@ ACTION_TYPES = {
     ActionType.move_robber: MoveRobberAction,
     ActionType.steal: StealAction,
     ActionType.monopoly: MonopolyAction,
-    ActionType.invention: InventionAction
+    ActionType.invention: InventionAction,
+    ActionType.discard: DiscardAction
 }
 
 def create_action(type: str | ActionType, kwargs: dict[str]):

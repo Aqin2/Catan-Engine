@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel
-from catan import Game
+from game import Game
 from actions import create_action
 from typing import Any
 import json

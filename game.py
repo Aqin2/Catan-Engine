@@ -8,7 +8,6 @@ from entities import *
 from actions import *
 from board import Board
 from player import Player
-
 class Game:
     roll_p = np.convolve(np.full((6,), 1 / 6), np.full((6,), 1 / 6))
     SETTLEMENT_COST = {
@@ -34,18 +33,12 @@ class Game:
         [DevType.road_build] * 2 + [DevType.monopoly] * 2
 
 
-    def __init__(self, player_names: list[str], seed=None, record_log=False, victory_callback=None):
-        self.record_log = record_log
-        self.logs = []
-        self.log = lambda x: self.logs.append(x) if self.record_log else None
-
-        
+    def __init__(self, player_names: list[str], seed=None, victory_callback=None):
         self.player_names = player_names
         self.seed = seed
         if self.seed == None:
             self.seed = time.time_ns()
-            self.log(f'no seed specified, using seed {self.seed}')
-        
+
         self.victory_callback = victory_callback
         self.random = np.random.default_rng(seed=self.seed)
         
@@ -54,6 +47,7 @@ class Game:
         #start, prod, or action
         self.step_fn = self.step_start
         self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.player_names) * 2)
+        self.to_discard: deque[Player] = deque()
 
         #player info
         self.players = [Player(name) for name in player_names]
@@ -145,6 +139,8 @@ class Game:
                 r = self.monopoly(action)
             case ActionType.invention:
                 r = self.invention(action)
+            case ActionType.discard:
+                r = self.discard(action)
         
         if r and use_queue:
             self.action_queue.popleft()
@@ -256,12 +252,34 @@ class Game:
         roll_n = self.get_roll_n()
 
         if roll_n == 7:
+            self.handle_discards()
             self.action_queue.append(ActionType.move_robber)
-            pass
         else:
             self.gen_resources(roll_n)
-            pass
         return True
+    
+    def handle_discards(self):
+        idx = self.cur_player_idx
+        for i in range(idx, idx + len(self.players)):
+            player = self.players[i % len(self.players)]
+            if np.sum(list(player.resources.values)) >= 7:
+                self.action_queue.append(ActionType.discard)
+                self.to_discard.append(player)
+    
+    def discard(self, action: DiscardAction):
+        player = self.to_discard[0]
+        if np.sum(list(action.resources.values())) < np.sum(list(player.resources.values())) // 2:
+            return False
+        for resource in Resource:
+            if action.resources[resource] > player.resources[resource]:
+                return False
+        
+        for resource in Resource:
+            self.resources[resource] += action.resources[resource]
+            player.resources[resource] -= action.resources[resource]
+            
+        return True
+
     
     def gen_resources(self, roll_n):
         total_gen = dict()
@@ -300,14 +318,16 @@ class Game:
         robber_tile = self.board.robber_tile
         n_steal = 0
         player = None
+        candidates = set()
         for node_idx in Board.tile_node_list[robber_tile.index]:
             node = self.board.nodes[node_idx]
             #must have a player and must not be self
             if node.player and node.player != self.cur_player:
                 #and must have at least 1 resource
-                if np.any(node.player.resources.values()):
+                if np.any(list(node.player.resources.values())) and node.player not in candidates:
                     n_steal += 1
                     player = node.player
+                    candidates.add(player)
 
         if self.played_knight:
             self.cur_player.num_knights_played += 1
@@ -316,7 +336,7 @@ class Game:
         if n_steal > 1:
             self.action_queue.append(ActionType.steal)
         elif n_steal == 1:
-            self.steal(self, StealAction(player))
+            self.steal(StealAction(player))
 
         #recalculate blocked resources
         for player in self.players:
@@ -345,10 +365,10 @@ class Game:
             node = self.board.nodes[node_idx]
             if node.player == action.player:
                 if np.any(node.player.resources.values()):
-                    resource_arr = np.array(node.player.resources.values())
+                    resource_arr = np.array(list(node.player.resources.values()))
                     total = np.sum(resource_arr)
 
-                    stolen = self.random.choice(node.player.resources.keys(), p=resource_arr / total)
+                    stolen = self.random.choice(list(node.player.resources.keys()), p=resource_arr / total)
 
                     node.player.resources[stolen] -= 1
                     self.cur_player.resources[stolen] += 1
@@ -375,7 +395,7 @@ class Game:
         return True
     
     def invention(self, action: InventionAction):
-        if np.sum(action.resources.values()) != 2:
+        if np.sum(list(action.resources.values())) != 2:
             return False
 
         for resource in Resource:
@@ -390,11 +410,42 @@ class Game:
         return True
 
 
-    def bank_trade(self, action: RollAction):
+    def bank_trade(self, action: BankTradeAction):
         if not self.has_rolled:
             return False
-        return False
-                
+        
+        for resource in Resource:
+            if action.trade_for[resource] > self.resources[resource]:
+                return False
+            if action.trade_in[resource] < self.cur_player.resources[resource]:
+                return False
+        
+        total_for = np.sum(list(action.trade_for.values()))
+        
+        total_in = 0
+        n_tradeable = dict()
+
+        for resource in Resource:
+            n_tradeable[resource] = action.trade_in[resource] // self.cur_player.bank_trade_rates[resource]
+            total_in += n_tradeable[resource]
+
+        if total_in < total_for:
+            #not giving enough for trade
+            return False
+        
+        total_in = 0
+        for resource in Resource:
+            amt = max(n_tradeable[resource], total_for - total_in)
+            total_in += amt
+            self.cur_player.resources[resource] -= amt
+            if total_in >= total_for:
+                break
+    
+        for resource in Resource:
+            self.cur_player.resources[resource] += action.trade_for[resource]
+        
+        return True
+
     def pay_cost(self, cost: dict[Resource, int]):
         for resource in Resource:
             if self.cur_player.resources[resource] < cost[resource]:
