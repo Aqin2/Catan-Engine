@@ -89,8 +89,9 @@ function App() {
       <Board
         game={game ? game : undefined}
         width={600}
+        selectedTool={selected}
         onTileClick={(coords) => onTileClick(coords)}
-        onEdgeClick={(coords) => onEdgeClick(coords)} 
+        onEdgeClick={(coords) => onEdgeClick(coords)}
         onNodeClick={(coords) => onNodeClick(coords)}
       />
       <div>

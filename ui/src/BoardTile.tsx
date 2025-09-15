@@ -55,11 +55,14 @@ const BoardTile: React.FC<BoardTileProps> = ({
       height={height}
     />
     {num > 0 ? <>
-      <circle
-        key={'circle'}
-        cx={x}
-        cy={y}
-        r={width / 6}
+      <rect
+        key={'square'}
+        x={x - width / 6}
+        y={y - width / 6}
+        width={width / 3}
+        height={width / 3}
+        rx={width / 12}
+        ry={width / 12}
         fill='white'
       />
       <text

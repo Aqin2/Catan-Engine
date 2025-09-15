@@ -262,7 +262,7 @@ class Game:
         idx = self.cur_player_idx
         for i in range(idx, idx + len(self.players)):
             player = self.players[i % len(self.players)]
-            if np.sum(list(player.resources.values)) >= 7:
+            if np.sum(list(player.resources.values())) >= 7:
                 self.action_queue.append(ActionType.discard)
                 self.to_discard.append(player)
     
