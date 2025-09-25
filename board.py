@@ -281,6 +281,7 @@ class Board:
             if node.player == player:
                 #place road
                 edge.player = player
+                player.roads.append(edge.index)
                 return True
             
             #empty node
@@ -290,6 +291,7 @@ class Board:
                     if adj_edge.player == player:
                         #place road
                         edge.player = player
+                        player.roads.append(edge.index)
                         return True
                     
             #if node is occupied by other player, cannot be built from that node
@@ -304,6 +306,34 @@ class Board:
             return False
         self.robber_tile = tile
         return True
+    
+    #this call is very very expensive if the road is long
+    #it is O(v!) time
+    def check_longest_road(self, player: Player):
+        visited = [False] * len(self.edges)
+        max_len = -1
+
+        def dfs(u: int, l):
+            visited[u] = True
+            max_len = max(max_len, l)
+            node_idxs = self.edge_node_list[u]
+            for node_idx in node_idxs:
+                #cant go through opponent settlement/city
+                if self.nodes[node_idx].player != player and self.nodes[node_idx]:
+                    continue
+                vs = self.node_edge_list[node_idx]
+                for v in vs:
+                    #two checks in one: v != u and v is not visited
+                    #if v == u, then visited[v] will be true bc of line 1 in dfs()
+                    if not visited[v] and self.edges[v].player == player:
+                        dfs(v, l + 1)
+            visited[u] = False
+
+        for edge_idx in player.roads:
+            dfs(edge_idx, 0)
+
+        player.longest_road_len = max_len
+        
 
     '''
     returns a json-serializable python obj.

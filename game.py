@@ -200,7 +200,7 @@ class Game:
         if self.road_dev_count > 0:
             self.road_dev_count -= 1
 
-        #TODO: check longest road
+        self.check_longest_road(self.cur_player)
         return True
 
     def play_dev(self, action: PlayDevAction):
@@ -457,19 +457,40 @@ class Game:
 
         return True
     
-    def check_largest_army(self):
-        new_largest_army = None
-        for player in self.players:
-            if player.num_knights_played < 3:
-                continue
-
-            if new_largest_army is None:
-                new_largest_army = player
-            elif new_largest_army.num_knights_played < player.num_knights_played:
-                new_largest_army = player
+    def check_longest_road(self, player: Player):
+        self.board.check_longest_road(player)
         
-        if new_largest_army.num_knights_played > self.p_largest_army.num_knights_played:
-            self.p_largest_army = new_largest_army
+        flag = False
+        for player in self.players:
+            if player.longest_road_len < 5:
+                continue
+            
+            if self.p_longest_road is None:
+                self.p_longest_road = player
+                flag = True
+            elif self.p_longest_road.longest_road_len < player.longest_road_len:
+                self.p_longest_road = player
+                flag = True
+        
+        if flag:
+            self.check_victory()
+        
+
+    
+    def check_largest_army(self):
+        flag = False
+        for player in self.players:
+            if player.num_knights_played < 5:
+                continue
+            
+            if self.p_largest_army is None:
+                self.p_largest_army = player
+                flag = True
+            elif self.p_largest_army.num_knights_played < player.num_knights_played:
+                self.p_largest_army = player
+                flag = True
+        
+        if flag:
             self.check_victory()
             
 

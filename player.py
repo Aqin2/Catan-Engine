@@ -40,6 +40,9 @@ class Player:
         self.has_longest_road = False
         self.has_largest_army = False
 
+        #speeds up longest road computation
+        self.roads = []
+
     def reset_resource_block(self):
         for roll in range(2, 13):
             if roll == 7:
