@@ -1,2 +1,10 @@
+from gymnasium import spaces
+import gymnasium as gym
 import numpy as np
-import time
+
+s = spaces.Dict({
+    'a': spaces.Discrete(2),
+    'b': spaces.Discrete(2)
+})
+
+print(s.dtype)

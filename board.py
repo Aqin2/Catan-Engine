@@ -315,7 +315,6 @@ class Board:
 
         def dfs(u: int, l):
             visited[u] = True
-            max_len = max(max_len, l)
             node_idxs = self.edge_node_list[u]
             for node_idx in node_idxs:
                 #cant go through opponent settlement/city
@@ -326,11 +325,12 @@ class Board:
                     #two checks in one: v != u and v is not visited
                     #if v == u, then visited[v] will be true bc of line 1 in dfs()
                     if not visited[v] and self.edges[v].player == player:
-                        dfs(v, l + 1)
+                        l = max(l, dfs(v, l + 1))
             visited[u] = False
+            return l
 
         for edge_idx in player.roads:
-            dfs(edge_idx, 0)
+            max_len = max(max_len, dfs(edge_idx, 0))
 
         player.longest_road_len = max_len
         
@@ -367,6 +367,30 @@ class Board:
         obj['robber_tile'] = int(self.robber_tile.index)
         
         return obj
+    
+    def get_obs(self, player_idx, num_players):
+        obs = dict()
+        obs['nodes'] = np.zeros((54, num_players), dtype=np.int32)
+        for node in self.nodes:
+            if node.player:
+                obs['nodes'][node.index][(node.player.index - player_idx) % num_players] = node.value
+        obs['edges'] = np.zeros((72, num_players), dtype=np.int32)
+        for edge in self.edges:
+            if edge.player:
+                obs['edges'][edge.index][(edge.player.index - player_idx) % num_players] = 1
+        obs['tile_types'] = np.zeros((19, 6), dtype=np.int32)
+        obs['tile_nums'] = np.zeros((19,), dtype=np.int32)
+        for tile in self.tiles:
+            if tile.resource:
+                obs['tile_types'][tile.index][RESOURCE_TYPES_DICT[tile.resource]] = 1
+                obs['tile_nums'][tile.index] = tile.number
+            else:
+                obs['tile_types'][tile.index][0] = 1
+                obs['tile_nums'][tile.index] = 0
+        obs['robber_tile'] = np.zeros((19,), dtype=np.int32)
+        obs['robber_tile'][self.robber_tile.index] = 1
+        
+        return obs
 
     @staticmethod
     def coords_hash(coords):

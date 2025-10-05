@@ -50,7 +50,7 @@ class Game:
         self.to_discard: deque[Player] = deque()
 
         #player info
-        self.players = [Player(name) for name in player_names]
+        self.players = [Player(name, i) for i, name in enumerate(player_names)]
         self.cur_player = self.players[0]
         self.cur_player_idx = 0
 
@@ -541,3 +541,14 @@ class Game:
         obj['players'] = {player.name: player.to_json_obj() for player in self.players}
 
         return obj
+    
+    def get_obs(self, player_idx: int):
+        obs = self.board.get_obs(player_idx, len(self.players))
+        obs['player'] = self.players[player_idx].get_obs(player_idx)
+        opponent_obs = []
+        for i in range(player_idx + 1, player_idx + len(self.players)):
+            opponent_obs.append(self.players[i % len(self.players)].get_obs(player_idx))
+        obs['opponents'] = tuple(opponent_obs)
+        return obs
+        
+        

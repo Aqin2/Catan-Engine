@@ -50,6 +50,12 @@ class BankTradeAction(Action):
         self.trade_in = trade_in
         self.trade_for = trade_for
 
+class PlayerTradeAction(Action):
+    def __init__(self, trade_in: dict[Resource, int], trade_for: dict[Resource, int]):
+        super().__init__(ActionType.player_trade)
+        self.trade_in = trade_in
+        self.trade_for = trade_for
+
 class MoveRobberAction(Action):
     def __init__(self, coords):
         super().__init__(ActionType.move_robber)
@@ -79,7 +85,7 @@ class EndTurnAction(Action):
     def __init__(self):
         super().__init__(ActionType.end_turn)
 
-ACTION_TYPES = {
+ACTION_TYPES_DICT = {
     ActionType.end_turn: EndTurnAction,
     ActionType.structure: StructureAction,
     ActionType.road: RoadAction,
@@ -87,7 +93,7 @@ ACTION_TYPES = {
     ActionType.buy_dev: BuyDevAction,
     ActionType.roll: RollAction,
     ActionType.bank_trade: BankTradeAction,
-    #ActionType.player_trade: PlayerTradeAction,
+    ActionType.player_trade: PlayerTradeAction,
     ActionType.move_robber: MoveRobberAction,
     ActionType.steal: StealAction,
     ActionType.monopoly: MonopolyAction,
@@ -95,9 +101,12 @@ ACTION_TYPES = {
     ActionType.discard: DiscardAction
 }
 
+ACTION_TYPES = list(ACTION_TYPES_DICT.keys())
+ACTION_CLASSES = list(ACTION_TYPES_DICT.values())
+
 def create_action(type: str | ActionType, kwargs: dict[str]):
     try:
-        action_class = ACTION_TYPES[ActionType(type)]
+        action_class = ACTION_TYPES_DICT[ActionType(type)]
         return action_class(**kwargs)
     except:
         return None
