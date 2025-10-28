@@ -51,20 +51,7 @@ class Board:
         [(0, None), (2, Resource.wheat)],
         [(1, Resource.ore)]
     ]
-    SETTLEMENT_COST = {
-        Resource.brick: 1,
-        Resource.wood: 1,
-        Resource.wool: 1,
-        Resource.wheat: 1
-    }
-    CITY_COST = {
-        Resource.wheat: 2,
-        Resource.ore: 3,
-    }
-    ROAD_COST = {
-        Resource.brick: 1,
-        Resource.wood: 1
-    }
+    
     adj_lists_set = False
 
     def __init__(self, players: list[Player], seed=None):
@@ -227,16 +214,11 @@ class Board:
         #check move legality for board
         if node_idx < 0 or node_idx >= len(self.nodes):
             return False
-        if not cur_player.available_settlements[node_idx] and not starting:
-            return False
         node = self.nodes[node_idx]
         if not node.available:
             return False
-        if not starting:
-            if not cur_player.can_afford(Board.SETTLEMENT_COST):
-                return False
-            #pay cost
-            cur_player.pay_cost(Board.SETTLEMENT_COST)
+        if not cur_player.available_settlements[node_idx] and not starting:
+            return False
         
         #update board
         node.player = cur_player
@@ -281,11 +263,6 @@ class Board:
         node = self.nodes[node_idx]
         if not cur_player.available_cities[node_idx]:
             return False
-        if not cur_player.can_afford(Board.CITY_COST):
-            return False
-
-        #pay cost
-        cur_player.pay_cost(Board.CITY_COST)
 
         #update board
         node.value = 2
@@ -311,10 +288,6 @@ class Board:
         if not cur_player.available_roads[edge_idx]:
             return False
         edge = self.edges[edge_idx]
-        if cur_player.road_dev_count == 0 and not starting:
-            if not cur_player.can_afford(Board.ROAD_COST):
-                return False
-            cur_player.pay_cost(Board.ROAD_COST)
         
         edge.player = cur_player
 

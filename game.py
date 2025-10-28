@@ -18,7 +18,20 @@ class Game:
     }
     DEV_CARDS = [DevType.knight] * 14 + [DevType.victory_point] * 5 + [DevType.monopoly] * 2 + \
         [DevType.road_build] * 2 + [DevType.monopoly] * 2
-
+    SETTLEMENT_COST = {
+        Resource.brick: 1,
+        Resource.wood: 1,
+        Resource.wool: 1,
+        Resource.wheat: 1
+    }
+    CITY_COST = {
+        Resource.wheat: 2,
+        Resource.ore: 3,
+    }
+    ROAD_COST = {
+        Resource.brick: 1,
+        Resource.wood: 1
+    }
 
     def __init__(self, player_names: list[str], seed=None, victory_callback=None, logging=False):
         self.player_names = player_names
@@ -140,53 +153,82 @@ class Game:
         return r
 
     def place_settlement(self, action: SettlementAction, starting=False):
-        #check move legality for game
-        if (not starting) and (not self.has_rolled):
-            return False
-        if self.cur_player.rem_settlements <= 0:
+        if not self.can_place_settlement(starting=starting):
             return False
             
         r = self.board.place_settlement(action.node_idx, self.cur_player, starting)
         if not r:
             return False
+        
+        self.cur_player.pay_cost(Game.SETTLEMENT_COST)
 
         self.log_info('built a settlement')
 
         self.check_victory()
         return True
+
+    def can_place_settlement(self, starting=False):
+        if (not starting) and (not self.has_rolled):
+            return False
+        if self.cur_player.rem_settlements <= 0:
+            return False
+        if not starting:
+            if not self.cur_player.can_afford(Game.SETTLEMENT_COST):
+                return False
+            
+        return True
     
     def place_city(self, action: CityAction):
-        #check move legality for game
-        if not self.has_rolled:
-            return False
-        if self.cur_player.rem_cities <= 0:
+        if not self.can_place_city():
             return False
 
         r = self.board.place_city(action.node_idx, self.cur_player)
         if not r:
             return False
+        
+        self.cur_player.pay_cost(Game.CITY_COST)
 
         self.log_info('built a city')
 
         self.check_victory()
         return True
     
-    def place_road(self, action: RoadAction, starting=False):
-        if (not starting) and (not self.has_rolled):
+    def can_place_city(self):
+        if not self.has_rolled:
             return False
-
+        if self.cur_player.rem_cities <= 0:
+            return False
+        if not self.cur_player.can_afford(Game.CITY_COST):
+            return False
+        return True
+    
+    def place_road(self, action: RoadAction, starting=False):
+        if not self.can_place_road(starting=starting):
+            return False
         
         r = self.board.place_road(action.edge_idx, self.cur_player, starting=starting)
         if not r:
             return False
-        
+    
         self.cur_player.rem_roads -= 1
         if self.cur_player.road_dev_count > 0:
             self.cur_player.road_dev_count -= 1
+        else:
+            self.cur_player.pay_cost(Game.ROAD_COST)
 
         self.log_info('built a road')
 
         self.check_longest_road(self.cur_player)
+        return True
+    
+    def can_place_road(self, starting=False):
+        if (not starting) and (not self.has_rolled):
+            return False
+        if self.cur_player.rem_roads <= 0:
+            return False
+        if not starting and self.cur_player.road_dev_count <= 0:
+            if not self.cur_player.can_afford(Game.ROAD_COST):
+                return False
         return True
 
     def play_dev(self, action: PlayDevAction):
@@ -545,5 +587,14 @@ class Game:
             opponent_obs.append(self.players[i % len(self.players)].get_obs(player_idx))
         obs['opponents'] = tuple(opponent_obs)
         return obs
+    
+    def get_mask(self, player_idx: int):
+        action_type_mask = np.zeros(len(ACTION_TYPES), dtype=np.uint8)
+
+
+
+
+
+
         
         

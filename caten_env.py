@@ -21,10 +21,6 @@ class CatanEnv(AECEnv):
         #1 = next player
         #2 = next next player
         #...
-
-        #TODO: pettingzoo hates dict obs spaces
-        #write a function that takes the dict down here
-        #and flattens into a single numpy array
         self._obs_space = Dict({
             'nodes': MultiDiscrete([[3] * self.num_agents] * 54),
             'edges': MultiBinary([72, self.num_agents]),
@@ -96,8 +92,23 @@ class CatanEnv(AECEnv):
         [13  : 18]:
         resources being spent
         used for trades, discarding
+
+        place settlement at this index [0-54)
+        place city at this index [0-54)
+        place road at this index [0-72)
+        move robber to this index [0-19)
+        end turn [0, 1]
+        roll dice [0, 1]
+        buy dev card [0, 1]
+        play type of dev card [0, 4)
+        steal from player [0, 4)
+        monopolize resource [0, 5)
+
+        trade in: [0, 5) * 19
+        trade for: [0, 5) * 19
         '''
-        self._act_space = MultiDiscrete([14, 19, 72, 54, 54, 4, self.num_agents, 5] + [20] * 10)
+        self._act_space = MultiDiscrete([len(ACTION_TYPES), 19, 72, 54, 54, 4, self.num_agents, 5] + [20] * 10)
+
 
     def seed(self, seed=None):
         self.game_seed = seed
