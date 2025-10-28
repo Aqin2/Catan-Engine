@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-g = Game(['a', 'b'])
+g = Game(['a', 'b'], logging=True)
 
 @app.websocket('/ws')
 async def websocket_endpoint(websocket: WebSocket):

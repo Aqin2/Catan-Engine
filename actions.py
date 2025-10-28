@@ -1,9 +1,11 @@
 from globals import DevType, Resource
+from player import Player
 from enum import Enum
 
 class ActionType(Enum):
     end_turn = 'end_turn'
-    structure = 'structure'
+    settlement = 'settlement'
+    city = 'city'
     road = 'road'
     play_dev = 'play_dev'
     buy_dev = 'buy_dev'
@@ -20,21 +22,25 @@ class Action:
     def __init__(self, type: ActionType):
         self.type = type
 
-class StructureAction(Action):
-    def __init__(self, coords, value):
-        super().__init__(ActionType.structure)
-        self.coords = coords
-        self.value = value
+class SettlementAction(Action):
+    def __init__(self, node_idx):
+        super().__init__(ActionType.settlement)
+        self.node_idx = node_idx
+
+class CityAction(Action):
+    def __init__(self, node_idx):
+        super().__init__(ActionType.city)
+        self.node_idx = node_idx
 
 class RoadAction(Action):
-    def __init__(self, coords):
+    def __init__(self, edge_idx):
         super().__init__(ActionType.road)
-        self.coords = coords
+        self.edge_idx = edge_idx
 
 class PlayDevAction(Action):
     def __init__(self, dev_type: DevType):
         super().__init__(ActionType.play_dev)
-        self.dev_type = dev_type
+        self.dev_type = DevType(dev_type)
 
 class BuyDevAction(Action):
     def __init__(self):
@@ -57,12 +63,12 @@ class PlayerTradeAction(Action):
         self.trade_for = trade_for
 
 class MoveRobberAction(Action):
-    def __init__(self, coords):
+    def __init__(self, tile_idx):
         super().__init__(ActionType.move_robber)
-        self.coords = coords
+        self.tile_idx = tile_idx
 
 class StealAction(Action):
-    def __init__(self, player):
+    def __init__(self, player: Player):
         super().__init__(ActionType.steal)
         self.player = player
 
@@ -87,7 +93,8 @@ class EndTurnAction(Action):
 
 ACTION_TYPES_DICT = {
     ActionType.end_turn: EndTurnAction,
-    ActionType.structure: StructureAction,
+    ActionType.settlement: SettlementAction,
+    ActionType.city: CityAction,
     ActionType.road: RoadAction,
     ActionType.play_dev: PlayDevAction,
     ActionType.buy_dev: BuyDevAction,
@@ -108,5 +115,5 @@ def create_action(type: str | ActionType, kwargs: dict[str]):
     try:
         action_class = ACTION_TYPES_DICT[ActionType(type)]
         return action_class(**kwargs)
-    except:
+    except Exception as e:
         return None

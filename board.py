@@ -3,7 +3,6 @@ from entities import *
 import numpy as np
 from copy import copy
 from player import Player
-import json
 
 class Board:
     BOARD_SIZE = 3
@@ -52,36 +51,90 @@ class Board:
         [(0, None), (2, Resource.wheat)],
         [(1, Resource.ore)]
     ]
-
+    SETTLEMENT_COST = {
+        Resource.brick: 1,
+        Resource.wood: 1,
+        Resource.wool: 1,
+        Resource.wheat: 1
+    }
+    CITY_COST = {
+        Resource.wheat: 2,
+        Resource.ore: 3,
+    }
+    ROAD_COST = {
+        Resource.brick: 1,
+        Resource.wood: 1
+    }
     adj_lists_set = False
 
-    def __init__(self, seed=None):
-        #randomly initialize tile and number lists
+    def __init__(self, players: list[Player], seed=None):
+        self.build_board()
+        self.build_dicts()
+        self.build_adj_lists()
+
+        self.players = players
+        self.reset(seed)
+        
+    def reset(self, seed):
+        #reset player entities
+        for edge in self.edges:
+            edge.player = None
+        for node in self.nodes:
+            node.player = None
+            node.value = 0
+            node.adj_port = None
+
+        #generate tile resources and numbers
         self.seed = seed
         self.random = np.random.default_rng(seed=seed)
 
-        self.generate_board()
-        self.build_dicts()
-        self.build_adj_lists()
-        
-    #randomly generate a new board
-    def generate_board(self):
         resources = np.array(Board.RESOURCES)
         numbers = np.array(Board.NUMBERS)
-        port_data = copy(Board.PORTS)
 
         self.random.shuffle(resources)
         self.random.shuffle(numbers)
-        self.random.shuffle(port_data)
 
         desert_idx = self.random.integers(19)
         resources = np.insert(resources, desert_idx, None)
         numbers = np.insert(numbers, desert_idx, -1)
+
+        for i, tile in enumerate(self.tiles):
+            tile.resource = resources[i]
+            tile.number = numbers[i]
         
+        self.robber_tile = self.tiles[desert_idx]
+
+        #add ports
+        port_data = copy(Board.PORTS)
+        self.random.shuffle(port_data)
+        self.ports: list[Port] = []
+        port_idx = 0
+        cur_tile_coords = Direction.QR * 2 * 3
+        for i, tile_offset in enumerate(Board.TILE_OFFSETS):
+            for port_pos, port_resource in port_data[i]:
+                self.ports.append(Port(
+                    cur_tile_coords + tile_offset * port_pos,
+                    port_idx,
+                    port_resource,
+                    Board.PORT_DIRS[i if port_pos != 2 else (i + 1) % 6]
+                ))
+                port_idx += 1
+
+        for port in self.ports:
+            for dir in port.dirs:
+                node: Node = self.node_dict.get(Board.coords_hash(port.coords + dir))
+                if node:
+                    node.adj_port = port
+    
+    #the build functions should only be called once
+    #to reset the board for a new game, call reset()
+    #this method builds the board graph structure
+    #it does not set resources or numbers on tiles
+    def build_board(self):
         #add initial tiles, edges and nodes
         cur_tile_coords = np.array([0, 0, 0])
 
-        self.tiles = [ Tile(cur_tile_coords.copy(), 0, resources[0], numbers[0]) ]
+        self.tiles = [ Tile(cur_tile_coords.copy(), 0, None, None) ]
         self.robber_tile = self.tiles[0]
 
         self.edges = [
@@ -108,11 +161,9 @@ class Board:
                     self.tiles.append(Tile(
                         cur_tile_coords.copy(),
                         tile_idx,
-                        resources[tile_idx],
-                        numbers[tile_idx]
+                        None,
+                        None
                     ))
-                    if resources[tile_idx] is None:
-                        self.robber_tile = self.tiles[tile_idx]
 
                     tile_idx += 1
                     
@@ -129,23 +180,6 @@ class Board:
                         node_idx += 1
         #end for
 
-        #add ports
-        self.ports: list[Port] = []
-        port_idx = 0
-        cur_tile_coords = Direction.QR * 2 * 3
-        for i, tile_offset in enumerate(Board.TILE_OFFSETS):
-            for port_pos, port_resource in port_data[i]:
-                self.ports.append(Port(
-                    cur_tile_coords + tile_offset * port_pos,
-                    port_idx,
-                    port_resource,
-                    Board.PORT_DIRS[i if port_pos != 2 else (i + 1) % 6]
-                ))
-                port_idx += 1
-        
-
-    #dicts for fast access
-    #dicts take a custom hash of the coords
     def build_dicts(self):
         self.tile_dict = dict()
         self.edge_dict = dict()
@@ -158,198 +192,174 @@ class Board:
         for node in self.nodes:
             self.node_dict[Board.coords_hash(node.coords)] = node
 
-        self.node_port_dict = dict()
-        for port in self.ports:
-            for dir in port.dirs:
-                self.node_port_dict[Board.coords_hash(port.coords + dir)] = port
 
-    #build adjacency lists for fast access
-    #these will always be the same between games so they are saved between instances of Board
     def build_adj_lists(self):
-        if Board.adj_lists_set:
-            return
-        
-        Board.edge_edge_list = []
         for edge in self.edges:
-            adj = []
-            for coords in edge.adj_edge_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.edge_dict.keys():
-                    adj.append(self.edge_dict[hash].index)
-            
-            Board.edge_edge_list.append(adj)
-                    
-        Board.node_node_list: list[list[int]] = []
-        for node in self.nodes:
-            adj = []
-            for coords in node.adj_node_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash].index)
-            Board.node_node_list.append(adj)
+            for node_coords in edge.adj_node_coords():
+                node: Node = self.node_dict[Board.coords_hash(node_coords)]
+                for edge_coords in node.adj_edge_coords():
+                    adj_edge = self.edge_dict.get(Board.coords_hash(edge_coords))
+                    if adj_edge and adj_edge != edge:
+                        edge.adj_edges.append(adj_edge)
+                edge.adj_nodes.append(node)
 
-        Board.node_edge_list: list[list[int]] = []
         for node in self.nodes:
-            adj = []
-            for coords in node.adj_edge_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.edge_dict.keys():
-                    adj.append(self.edge_dict[hash].index)
-            Board.node_edge_list.append(adj)
+            for edge_coords in node.adj_edge_coords():                
+                adj_edge = self.edge_dict.get(Board.coords_hash(edge_coords))
+                if adj_edge:
+                    node.adj_edges.append(adj_edge)
+            for node_coords in node.adj_node_coords():
+                adj_node = self.node_dict.get(Board.coords_hash(node_coords))
+                if adj_node:
+                    node.adj_nodes.append(adj_node)
+            for tile_coords in node.adj_tile_coords():
+                adj_tile = self.tile_dict.get(Board.coords_hash(tile_coords))
+                if adj_tile:
+                    node.adj_tiles.append(adj_tile)
 
-        Board.edge_node_list: list[list[int]] = []
-        for edge in self.edges:
-            adj = []
-            for coords in edge.adj_node_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash].index)
-            Board.edge_node_list.append(adj)
-
-        Board.node_tile_list: list[list[int]] = []
-        for node in self.nodes:
-            adj = []
-            for coords in node.adj_tile_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.tile_dict.keys():
-                    adj.append(self.tile_dict[hash].index)
-            Board.node_tile_list.append(adj)
-        
-        Board.tile_node_list: list[list[int]] = []
         for tile in self.tiles:
-            adj = []
-            for coords in tile.adj_node_coords():
-                hash = Board.coords_hash(coords)
-                if hash in self.node_dict.keys():
-                    adj.append(self.node_dict[hash].index)
-            Board.tile_node_list.append(adj)
-        
-        Board.adj_lists_set = True
+            for node_coords in tile.adj_node_coords():
+                adj_node = self.node_dict.get(Board.coords_hash(node_coords))
+                if adj_node:
+                    tile.adj_nodes.append(adj_node)
 
-        
-    def place_structure(self, coords, player: Player, value, starting=False):
-        node: Node = self.node_dict.get(Board.coords_hash(coords))
-        if node is None:
+    def place_settlement(self, node_idx: int, cur_player: Player, starting=False):
+        #check move legality for board
+        if node_idx < 0 or node_idx >= len(self.nodes):
             return False
-        if value == 1:
-            if not node.available:
+        if not cur_player.available_settlements[node_idx] and not starting:
+            return False
+        node = self.nodes[node_idx]
+        if not node.available:
+            return False
+        if not starting:
+            if not cur_player.can_afford(Board.SETTLEMENT_COST):
                 return False
-            if not starting:
-                has_road = False
-                for adj_idx in Board.node_edge_list[node.index]:
-                    if self.edges[adj_idx].player == player:
-                        has_road = True
-                        break
-                if not has_road:
-                    return False
-        elif value == 2:
-            #cant build cities initially
-            if starting:
-                return False
-            if node.value != 1:
-                return False
-            if node.player != player:
-                return False
-            
-        old_value = node.value
-
-        for adj_idx in Board.node_tile_list[node.index]:
-            tile = self.tiles[adj_idx]
-            if tile.resource is not None:
-                player.resources_gen[tile.number][tile.resource] += value - old_value
-
-        node.place_structure(player, value)
+            #pay cost
+            cur_player.pay_cost(Board.SETTLEMENT_COST)
         
-        for adj_idx in Board.node_node_list[node.index]:
-            self.nodes[adj_idx].available = False
+        #update board
+        node.player = cur_player
+        node.value = 1
+
+        #player allowed move updates
         node.available = False
-        
-        return True
-    
-    def place_road(self, coords, player: Player):
-        edge: Edge = self.edge_dict.get(Board.coords_hash(coords))
-        if edge is None:
-            return False
-        if edge.player:
-            return False
-        
-        #must place a road from an existing settlement or road,
-        #road must not go through another players settlement
-        for node_idx in Board.edge_node_list[edge.index]:
-            node: Node = self.nodes[node_idx]
-            #adjacent settlement/city
-            if node.player == player:
-                #place road
-                edge.player = player
-                player.roads.append(edge.index)
-                return True
-            
-            #empty node
-            elif node.player is None:
-                for edge_idx in Board.node_edge_list[node.index]:
-                    adj_edge = self.edges[edge_idx]
-                    if adj_edge.player == player:
-                        #place road
-                        edge.player = player
-                        player.roads.append(edge.index)
-                        return True
-                    
-            #if node is occupied by other player, cannot be built from that node
-            
-        return False
+        for player in self.players:
+            player.available_settlements[node_idx] = False
 
-    def move_robber(self, coords):
-        tile: Tile = self.tile_dict.get(Board.coords_hash(coords), None)
-        if tile is None:
-            return False
-        if self.robber_tile == tile:
-            return False
-        self.robber_tile = tile
+        for adj_node in node.adj_nodes:
+            for player in self.players:
+                player.available_settlements[adj_node.index] = False
+            adj_node.available = False
+        
+        for adj_edge in node.adj_edges:
+            if not adj_edge.player:
+                cur_player.available_roads[adj_edge.index] = True
+
+        cur_player.available_cities[node_idx] = True
+        cur_player.rem_settlements -= 1
+        cur_player.n_settlements += 1
+        #player resource generation update
+        for tile in node.adj_tiles:
+            if tile.resource:
+                cur_player.resources_gen[tile.number][tile.resource] += 1
+        
+        #player bank trade rate / port update
+        port = node.adj_port
+        if port:
+            if port.resource:
+                cur_player.bank_trade_rates[port.resource] = 2
+            else:
+                for resource in Resource:
+                    cur_player.bank_trade_rates[resource] = min(3, cur_player.bank_trade_rates[resource])
         return True
-    
-    #this call is very very expensive if the road is long
-    #it is O(v!) time
+
+    def place_city(self, node_idx: int, cur_player: Player):
+        #check move legality for board
+        if node_idx < 0 or node_idx >= len(self.nodes):
+            return False
+        node = self.nodes[node_idx]
+        if not cur_player.available_cities[node_idx]:
+            return False
+        if not cur_player.can_afford(Board.CITY_COST):
+            return False
+
+        #pay cost
+        cur_player.pay_cost(Board.CITY_COST)
+
+        #update board
+        node.value = 2
+
+        #player allowed move update
+        cur_player.available_cities[node_idx] = False
+        cur_player.rem_cities -= 1
+        cur_player.n_settlements -= 1
+        cur_player.n_cities += 1
+
+        #player resource generation update
+        for tile in node.adj_tiles:
+            if tile.resource:
+                cur_player.resources_gen[tile.number][tile.resource] += 1
+
+        #no need for bank trade rate update
+        #upgrading to a city doesnt access new ports
+        return True
+
+    def place_road(self, edge_idx: int, cur_player: Player, starting=False):
+        if edge_idx < 0 or edge_idx >= len(self.edges):
+            return False
+        if not cur_player.available_roads[edge_idx]:
+            return False
+        edge = self.edges[edge_idx]
+        if cur_player.road_dev_count == 0 and not starting:
+            if not cur_player.can_afford(Board.ROAD_COST):
+                return False
+            cur_player.pay_cost(Board.ROAD_COST)
+        
+        edge.player = cur_player
+
+        for player in self.players:
+            player.available_roads[edge.index] = False
+
+        for i, adj_edge in enumerate(edge.adj_edges):
+            if adj_edge.player:
+                continue
+            if edge.adj_nodes[i // 2].player is None or edge.adj_nodes[i // 2].player == cur_player:
+                cur_player.available_roads[adj_edge.index] = True
+            
+        for adj_node in edge.adj_nodes:
+            if adj_node.available:
+                cur_player.available_settlements[adj_node.index] = True
+
+        return True
+            
+    def move_robber(self, tile_idx: int):
+        if tile_idx < 0 or tile_idx >= len(self.tiles):
+            return False
+        if self.robber_tile.index == tile_idx:
+            return False
+        self.robber_tile = self.tiles[tile_idx]
+        return True
+        
     def check_longest_road(self, player: Player):
         visited = [False] * len(self.edges)
-        max_len = -1
-
-        def dfs(u: int, l):
+        def dfs(u: int, l: int):
             visited[u] = True
-            node_idxs = self.edge_node_list[u]
-            for node_idx in node_idxs:
-                #cant go through opponent settlement/city
-                if self.nodes[node_idx].player != player and self.nodes[node_idx]:
+            edge = self.edges[u]
+            for i, adj_edge in enumerate(edge.adj_edges):
+                if edge.adj_nodes[i // 2].player != player and edge.adj_nodes[i // 2]:
                     continue
-                vs = self.node_edge_list[node_idx]
-                for v in vs:
-                    #two checks in one: v != u and v is not visited
-                    #if v == u, then visited[v] will be true bc of line 1 in dfs()
-                    if not visited[v] and self.edges[v].player == player:
-                        l = max(l, dfs(v, l + 1))
+                if not visited[adj_edge.index] and adj_edge.player == player:
+                    l = max(l, dfs(adj_edge.index, l + 1))
             visited[u] = False
             return l
-
+        
+        max_len = -1
         for edge_idx in player.roads:
             max_len = max(max_len, dfs(edge_idx, 0))
-
-        player.longest_road_len = max_len
         
+        player.longest_road_len = max_len
 
-    '''
-    returns a json-serializable python obj.
-
-    json obj format:
-    {
-        tiles: (string)[], //resource type or null for desert
-        edges: (string | null)[], //player road name or null for no road
-
-        nodes: { player: string | null, value: int }[]
-        //player structure name or null for no structure,
-        //value = 0 for none, 1 for settlement, 2 for city
-
-        //the tile/edge/node with id i will be arr[i] for the respective array arr
-    }
-    '''
     def to_json_obj(self):
         obj = dict()
 
@@ -395,3 +405,4 @@ class Board:
     @staticmethod
     def coords_hash(coords):
         return coords[0] * 256 + coords[1]
+    

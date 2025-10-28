@@ -68,7 +68,7 @@ class CatanEnv(AECEnv):
         self._flat_obs_space = flatten_space(self._obs_space)
 
         '''
-        action space encoding: MultiDiscrete([13, 19, 72, 54, 4, (n players), 5] + [20] * 10)
+        action space encoding: MultiDiscrete([14, 19, 72, 54, 4, (n players), 5] + [20] * 10)
         [0]:
         action type
             0: end turn
@@ -81,21 +81,23 @@ class CatanEnv(AECEnv):
         [2]:
         edge id
         [3]:
-        node id
+        node id (settlement)
         [4]:
-        dev card 
+        node id (city)
         [5]:
-        player to steal from
+        dev card 
         [6]:
+        player to steal from
+        [7]:
         resource to monopolize
-        [7 : 12]:
+        [8 : 13]:
         resources being received
         used for trades, invention dev card
-        [12  : 17]:
+        [13  : 18]:
         resources being spent
         used for trades, discarding
         '''
-        self._act_space = MultiDiscrete([13, 19, 72, 54, 4, self.num_agents, 5] + [20] * 10)
+        self._act_space = MultiDiscrete([14, 19, 72, 54, 54, 4, self.num_agents, 5] + [20] * 10)
 
     def seed(self, seed=None):
         self.game_seed = seed
@@ -124,6 +126,9 @@ class CatanEnv(AECEnv):
     def action_space(self, agent):
         return self._act_space
 
+
+    #TODO: this function is hideous
+    #clean it up
     def get_action(self, action: np.ndarray):
         action_class = ACTION_CLASSES[action[0]]
         action_type = ACTION_TYPES[action[0]]
@@ -131,34 +136,32 @@ class CatanEnv(AECEnv):
         match action_type:
             case ActionType.end_turn | ActionType.buy_dev | ActionType.roll:
                 return action_class()
-            case ActionType.structure:
-                coords = self.game.board.nodes[action[1]].coords
-                value = self.game.board.nodes[action[1]].value + 1
-                return action_class(coords, value)
+            case ActionType.settlement:
+                return action_class(action[3])
+            case ActionType.city:
+                return action_class(action[4])
             case ActionType.road:
-                coords = self.game.board.edges[action[1]].coords
-                return action_class(coords)
+                return action_class(action[2])
             case ActionType.play_dev:
-                type = DEV_TYPES_LIST[action[4]]
+                type = DEV_TYPES_LIST[action[5]]
                 return action_class(type)
             case ActionType.bank_trade | ActionType.player_trade:
-                trade_in = dict(zip(RESOURCE_TYPES_LIST, action[12:]))
-                trade_for = dict(zip(RESOURCE_TYPES_LIST, action[7:12]))
+                trade_in = dict(zip(RESOURCE_TYPES_LIST, action[13:]))
+                trade_for = dict(zip(RESOURCE_TYPES_LIST, action[8:13]))
                 return action_class(trade_in, trade_for)
             case ActionType.move_robber:
-                coords = self.game.board.tiles[action[1]].coords
-                return action_class(coords)
+                return action_class(action[1])
             case ActionType.steal:
-                player = self.possible_agents[action[5]]
+                player = self.possible_agents[action[6]]
                 return action_class(player)
             case ActionType.monopoly:
-                resource = RESOURCE_TYPES_LIST[action[6]]
+                resource = RESOURCE_TYPES_LIST[action[7]]
                 return action_class(resource)
             case ActionType.invention:
-                trade_for = dict(zip(RESOURCE_TYPES_LIST, action[7:12]))
+                trade_for = dict(zip(RESOURCE_TYPES_LIST, action[8:13]))
                 return action_class(trade_for)
             case ActionType.discard:
-                trade_in = dict(zip(RESOURCE_TYPES_LIST, action[12:]))
+                trade_in = dict(zip(RESOURCE_TYPES_LIST, action[13:]))
                 return action_class(trade_in)
 
 from pettingzoo.test import api_test

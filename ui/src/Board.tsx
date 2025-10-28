@@ -6,10 +6,6 @@ import coords from "./coords.json";
 import type { game } from './types';
 import BoardTile from "./BoardTile";
 
-interface BoardProps {
-  width: number
-};
-
 const player_colors = [
   'blue',
   '#b22222', // darker red
@@ -29,112 +25,13 @@ const xy_coords = (qrs_coords: number[], scale: number) => {
   ]
 }
 
-// Check if a settlement can be placed at the given coordinates
-// Settlements must be at least 2 edges away from any other settlement/city
-const isValidSettlementLocation = (targetCoords: number[], nodes: any[], node_coords: number[][]) => {
-  for (let i = 0; i < nodes.length; i++) {
-    // Skip if this node is empty
-    if (!nodes[i].player) continue;
-
-    // Get the coordinates of the existing settlement/city
-    const existingCoords = node_coords[i];
-
-    // Calculate distance using cubic coordinate distance formula
-    // distance = max(|q1-q2|, |r1-r2|, |s1-s2|)
-    const dq = Math.abs(targetCoords[0] - existingCoords[0]);
-    const dr = Math.abs(targetCoords[1] - existingCoords[1]);
-    const ds = Math.abs(targetCoords[2] - existingCoords[2]);
-
-    const distance = Math.max(dq, dr, ds);
-
-    // Debug logging
-    console.log(`Checking distance between [${targetCoords}] and [${existingCoords}]: distance = ${distance}`);
-
-    // In this coordinate system, adjacent vertices have distance 4
-    // Settlements must be at least distance 8 apart (2 edges away)
-    if (distance <= 4) {
-      console.log(`Too close! Distance ${distance} <= 4 (adjacent vertices)`);
-      return false;
-    }
-  }
-  console.log(`Valid location for [${targetCoords}]`);
-  return true;
-}
-
-// Check if a road can be placed on the given edge
-const isValidRoadLocation = (edgeIndex: number, edges: any[], nodes: any[], curPlayer: string, edge_endpoints: number[][][], node_coords: number[][]) => {
-  // If edge already has a road, it's not available
-  if (edges[edgeIndex]) {
-    return false;
-  }
-
-  // Get the two endpoints of this edge
-  const edgeCoords = edge_endpoints[edgeIndex];
-  const node1Coords = edgeCoords[0];
-  const node2Coords = edgeCoords[1];
-
-  // Find the node indices for these coordinates
-  let node1Index = -1;
-  let node2Index = -1;
-
-  for (let i = 0; i < node_coords.length; i++) {
-    const currentNodeCoords = node_coords[i];
-    if (currentNodeCoords && currentNodeCoords.length >= 3) {
-      if (currentNodeCoords[0] === node1Coords[0] &&
-          currentNodeCoords[1] === node1Coords[1] &&
-          currentNodeCoords[2] === node1Coords[2]) {
-        node1Index = i;
-      }
-      if (currentNodeCoords[0] === node2Coords[0] &&
-          currentNodeCoords[1] === node2Coords[1] &&
-          currentNodeCoords[2] === node2Coords[2]) {
-        node2Index = i;
-      }
-    }
-  }
-
-  // Check if either endpoint has the player's settlement/city
-  if ((node1Index >= 0 && nodes[node1Index].player === curPlayer) ||
-      (node2Index >= 0 && nodes[node2Index].player === curPlayer)) {
-    return true;
-  }
-
-  // Check if either endpoint is connected to the player's road
-  // For each endpoint, check if any adjacent edge has the player's road
-  for (let nodeIndex of [node1Index, node2Index]) {
-    if (nodeIndex >= 0 && !nodes[nodeIndex].player) {
-      // Empty node - check for adjacent edges that might have player's road
-      // Since we don't have full adjacency data, we'll use a coordinate-based approximation
-      const nodeCoord = node_coords[nodeIndex];
-
-      // Check all edges to see if any are close to this node and owned by player
-      for (let j = 0; j < edges.length; j++) {
-        if (edges[j] === curPlayer) {
-          // This edge belongs to the player, check if it's adjacent to our node
-          const playerEdgeCoords = edge_endpoints[j];
-          const edgeNode1 = playerEdgeCoords[0];
-          const edgeNode2 = playerEdgeCoords[1];
-
-          // Check if this player edge shares a node with our target edge
-          if ((edgeNode1[0] === nodeCoord[0] && edgeNode1[1] === nodeCoord[1] && edgeNode1[2] === nodeCoord[2]) ||
-              (edgeNode2[0] === nodeCoord[0] && edgeNode2[1] === nodeCoord[1] && edgeNode2[2] === nodeCoord[2])) {
-            return true;
-          }
-        }
-      }
-    }
-  }
-
-  return false;
-}
-
 interface BoardProps {
   game?: game,
   width: number,
   selectedTool?: string | null,
-  onTileClick: (coords: number[]) => void,
-  onEdgeClick: (coords: number[]) => void,
-  onNodeClick: (coords: number[]) => void
+  onTileClick: (tile_idx: number) => void,
+  onEdgeClick: (edge_idx: number) => void,
+  onNodeClick: (node_idx: number) => void
 };
 
 const Board: React.FC<BoardProps> = ({
@@ -169,13 +66,12 @@ const Board: React.FC<BoardProps> = ({
         width={width}
         tile={game.board.tiles[i]}
         has_robber={game.board.robber_tile == i}
-        onTileClick={() => onTileClick(coords)}
+        onTileClick={() => onTileClick(i)}
       />
     })}
     {edge_endpoints.map((endpoints, i) => {
       const [x1, y1] = xy_coords(endpoints[0], scale);
       const [x2, y2] = xy_coords(endpoints[1], scale);
-      const coords = endpoints[0].map((x, i) => (x + endpoints[1][i]) / 2)
 
       let color = 'black'
       let isAvailableForRoad = false;
@@ -184,7 +80,7 @@ const Board: React.FC<BoardProps> = ({
         color = player_colors[game.player_names.indexOf(game.board.edges[i])]
       } else if (selectedTool === 'road') {
         // Check if road can be placed here
-        isAvailableForRoad = isValidRoadLocation(i, game.board.edges, game.board.nodes, game.cur_player, edge_endpoints, node_coords);
+        isAvailableForRoad = game.players[game.cur_player].available_roads[i]
       }
 
       return <BoardEdge
@@ -197,7 +93,7 @@ const Board: React.FC<BoardProps> = ({
         strokeWidth={10}
         selectedTool={selectedTool}
         isAvailableForRoad={isAvailableForRoad}
-        onClick={() => {onEdgeClick(coords)}}
+        onClick={() => {onEdgeClick(i)}}
       />
     })}
     {node_coords.map((coords, i) => {
@@ -218,7 +114,7 @@ const Board: React.FC<BoardProps> = ({
         // Empty node - check if available for building when settlement tool is selected
         if (selectedTool === 'settlement') {
           // Check distance rule: settlements must be at least 2 edges away from any other settlement/city
-          isAvailableForBuilding = isValidSettlementLocation(coords, game.board.nodes, node_coords);
+          isAvailableForBuilding = game.players[game.cur_player].available_settlements[i]
         }
         // Note: No yellow indicators for cities - they will be validated by backend
       }
@@ -242,7 +138,7 @@ const Board: React.FC<BoardProps> = ({
         selectedTool={selectedTool}
         isAvailableForBuilding={isAvailableForBuilding}
         isUpgradableToCity={isUpgradableToCity}
-        onClick={() => {onNodeClick(coords)}}
+        onClick={() => {onNodeClick(i)}}
       />
     })}
   </svg>

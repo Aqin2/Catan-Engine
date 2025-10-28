@@ -20,10 +20,18 @@ class Node(Entity):
     ]
     def __init__(self, coords, index):
         super().__init__(coords, index)
-        self.player = None
+        self.player: Player | None = None
         self.value = 0
 
         self.available = True
+        
+        #adj_nodes[i] is connected through adj_edges[i]
+        self.adj_edges: list[Edge] = []
+        self.adj_nodes: list[Node] = []
+
+        self.adj_tiles: list[Tile] = []
+        self.adj_port: Port = None
+
 
         if np.all(self.coords % 6 == 2):
             self.top = True
@@ -31,10 +39,6 @@ class Node(Entity):
             self.top = False
         else:
             raise ValueError(f'Invalid node coordinates: {self.coords}')
-    
-    def place_structure(self, player: Player, value: int):
-        self.player = player
-        self.value = value
 
     def adj_node_coords(self):
         if self.top:
@@ -75,6 +79,10 @@ class Edge(Entity):
         assert len(i[0]) == 1, f'Invalid edge coordinates: {self.coords}'
         self.dir = i[0][0]
 
+        #self.adj_edges[i] is connected through self.adj_nodes[i // 2]
+        self.adj_edges: list[Edge] = []
+        self.adj_nodes: list[Node] = []
+
     def place_road(self, player: Player):
         self.player = player
 
@@ -109,6 +117,8 @@ class Tile(Entity):
         super().__init__(coords, index)
         self.resource = resource
         self.number = number
+
+        self.adj_nodes: list[Node] = []
 
     def adj_node_coords(self):
         return [ self.coords + offset for offset in Tile.NODE_OFFSETS ]

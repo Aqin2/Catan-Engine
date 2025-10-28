@@ -14,50 +14,39 @@ function App() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [game, setGame] = useState<game | null>(null);
 
-  const onTileClick = (coords: number[]) => {
+  const sendAction = (type: string, kwargs: any = {}) => {
+    if (socket?.readyState == WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        'action_type': type,
+        'kwargs': kwargs
+      }));
+    }
+  }
+
+  const onTileClick = (tile_idx: number) => {
     switch(selected) {
       case 'robber':
-        if (socket?.readyState == WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            'action_type': 'move_robber',
-            'kwargs': {
-              'coords': coords
-            }
-          }));
-        }
+        sendAction('move_robber', {'tile_idx': tile_idx});
       break;
     } 
   }
 
-  const onEdgeClick = (coords: number[]) => {
+  const onEdgeClick = (edge_idx: number) => {
     switch(selected) {
       case 'road':
-        if (socket?.readyState == WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            'action_type': 'road',
-            'kwargs': {
-              'coords': coords
-            }
-          }));
-        }
+        sendAction('road', {'edge_idx': edge_idx});
       break;
     }    
   }
   
 
-  const onNodeClick = (coords: number[]) => {
+  const onNodeClick = (node_idx: number) => {
     switch(selected) {
       case 'settlement':
+        sendAction('settlement', {'node_idx': node_idx});
+      break;
       case 'city':
-        if (socket?.readyState == WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            'action_type': 'structure',
-            'kwargs': {
-              'coords': coords,
-              'value': selected == 'settlement' ? 1 : 2
-            }
-          }));
-        }
+        sendAction('city', {'node_idx': node_idx});
       break;
     }
   }
@@ -71,9 +60,13 @@ function App() {
 
 
     ws.onmessage = (event) => {
-      console.log(JSON.parse(event.data));
-      setGame(JSON.parse(event.data));
+      let game: game = JSON.parse(event.data);
+      
+      setGame(game);
+      console.log(game);
+      game.info.forEach((x) => console.log(x));
     };
+
 
     return () => {
       if (ws.readyState == WebSocket.OPEN)
@@ -101,27 +94,15 @@ function App() {
         <GameButton name={'Move Robber'} id={'robber'} selected={selected} setSelected={setSelected}/>
       </div>
       <div>
-        <Button variant='outline-light' className='me-2 game-button' onClick={() => {
-          if (socket?.readyState == WebSocket.OPEN)
-            socket.send(JSON.stringify({
-              'action_type': 'end_turn',
-              'kwargs': {}
-            }));
-        }}>End Turn</Button>
-        <Button variant='outline-light' className='me-2 game-button' onClick={() => {
-          if (socket?.readyState == WebSocket.OPEN)
-            socket.send(JSON.stringify({
-              'action_type': 'roll',
-              'kwargs': {}
-            }));
-        }}>Roll Dice</Button>
-        <Button variant='outline-light' className='me-2 game-button' onClick={() => {
-          if (socket?.readyState == WebSocket.OPEN)
-            socket.send(JSON.stringify({
-              'action_type': 'buy_dev',
-              'kwargs': {}
-            }));
-        }}>Buy Dev Card</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('end_turn')}>End Turn</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('roll')}>Roll Dice</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('buy_dev')}>Buy Dev Card</Button>
+      </div>
+      <div>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('play_dev', {'dev_type': 'knight'})}>Knight</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('play_dev', {'dev_type': 'monopoly'})}>Monopoly</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('play_dev', {'dev_type': 'road_build'})}>Road Building</Button>
+        <Button variant='outline-light' className='me-2 game-button' onClick={() => sendAction('play_dev', {'dev_type': 'invention'})}>Invention</Button>
       </div>
       {game ? <div>
         {Object.entries(game.players).map(([name, player], i) => {

@@ -1,12 +1,17 @@
 from globals import *
 from copy import copy
+import numpy as np
 
 
 class Player:
     def __init__(self, name, index):
         self.name = name
         self.index = index
-        
+
+        self.available_roads = np.zeros((72,), dtype=np.bool_)
+        self.available_settlements = np.zeros((54,), dtype=np.bool_)
+        self.available_cities = np.zeros((54,), dtype=np.bool_)
+
         self.bank_trade_rates = dict()
         self.resources: dict[Resource, int] = dict()
         for resource in Resource:
@@ -34,6 +39,8 @@ class Player:
             self.dev_cards[dev_type] = 0
             self.dev_cards_cur_turn[dev_type] = 0
 
+        self.road_dev_count = 0
+
         self.victory_points = 0
         self.longest_road_len = 0
         self.num_knights_played = 0
@@ -42,6 +49,16 @@ class Player:
 
         #speeds up longest road computation
         self.roads = []
+
+    def can_afford(self, cost: dict[Resource, int]):
+        for resource in Resource:
+            if self.resources[resource] < cost[resource]:
+                return False
+        return True
+    
+    def pay_cost(self, cost: dict[Resource, int]):
+        for resource in Resource:
+            self.resources[resource] -= cost[resource]
 
     def reset_resource_block(self):
         for roll in range(2, 13):
@@ -63,7 +80,10 @@ class Player:
     def to_json_obj(self):
         return {
             'resources': {resource.value: count for resource, count in self.resources.items()},
-            'dev_cards': {card.value: count for card, count in self.dev_cards.items()}
+            'dev_cards': {card.value: count for card, count in self.dev_cards.items()},
+            'available_roads': [bool(i) for i in self.available_roads],
+            'available_settlements': [bool(i) for i in self.available_settlements],
+            'available_cities': [bool(i) for i in self.available_cities]
         }
     
     def get_obs(self, player_idx):

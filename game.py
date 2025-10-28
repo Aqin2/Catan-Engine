@@ -8,22 +8,9 @@ from entities import *
 from actions import *
 from board import Board
 from player import Player
+
 class Game:
     roll_p = np.convolve(np.full((6,), 1 / 6), np.full((6,), 1 / 6))
-    SETTLEMENT_COST = {
-        Resource.brick: 1,
-        Resource.wood: 1,
-        Resource.wool: 1,
-        Resource.wheat: 1
-    }
-    CITY_COST = {
-        Resource.wheat: 2,
-        Resource.ore: 3,
-    }
-    ROAD_COST = {
-        Resource.brick: 1,
-        Resource.wood: 1
-    }
     DEV_CARD_COST = {
         Resource.wool: 1,
         Resource.wheat: 1,
@@ -33,7 +20,7 @@ class Game:
         [DevType.road_build] * 2 + [DevType.monopoly] * 2
 
 
-    def __init__(self, player_names: list[str], seed=None, victory_callback=None):
+    def __init__(self, player_names: list[str], seed=None, victory_callback=None, logging=False):
         self.player_names = player_names
         self.seed = seed
         if self.seed == None:
@@ -41,21 +28,19 @@ class Game:
 
         self.victory_callback = victory_callback
         self.random = np.random.default_rng(seed=self.seed)
-        
-        self.board = Board(seed=self.seed)
        
         #start, prod, or action
         self.step_fn = self.step_start
-        self.action_queue = deque([ActionType.structure, ActionType.road] * len(self.player_names) * 2)
+        self.action_queue = deque([ActionType.settlement, ActionType.road] * len(self.player_names) * 2)
         self.to_discard: deque[Player] = deque()
 
         #player info
         self.players = [Player(name, i) for i, name in enumerate(player_names)]
         self.cur_player = self.players[0]
         self.cur_player_idx = 0
+        self.board = Board(self.players, seed=self.seed)
 
         #current player info for current turn
-        self.road_dev_count = 0 #how many free roads remaining if has played road building dev card
         self.has_played_dev = False
         self.has_rolled = False
         self.played_knight = False
@@ -72,7 +57,16 @@ class Game:
         self.dev_cards = copy(Game.DEV_CARDS)
         self.random.shuffle(self.dev_cards)
 
+        #used for logging
+        self.info: list[str] = []
+        self.logging = logging
+
+    def log_info(self, msg: str):
+        if self.logging:
+            self.info.append(msg)
+
     def step(self, action: Action):
+        self.info = []
         r = self.step_fn(action)
         return r
 
@@ -81,10 +75,8 @@ class Game:
             #invalid action, returns false
             return False
         r = False
-        if action.type == ActionType.structure:
-            if action.value != 1:
-                return False
-            r = self.place_structure(action, starting=True)
+        if action.type == ActionType.settlement:
+            r = self.place_settlement(action, starting=True)
             if r:
                 self.action_queue.popleft()
 
@@ -100,7 +92,6 @@ class Game:
                 
                 elif len(self.action_queue) > len(self.players) * 2:
                     self.advance_player()
-        
         return r
     
     def step_main(self, action: Action):
@@ -119,8 +110,10 @@ class Game:
                     r = True
                 else:
                     r = False
-            case ActionType.structure:
-                r = self.place_structure(action)
+            case ActionType.settlement:
+                r = self.place_settlement(action)
+            case ActionType.city:
+                r = self.place_city(action)
             case ActionType.road:
                 r = self.place_road(action)
             case ActionType.play_dev:
@@ -146,59 +139,52 @@ class Game:
             self.action_queue.popleft()
         return r
 
-
-    def place_structure(self, action: StructureAction, starting=False):
+    def place_settlement(self, action: SettlementAction, starting=False):
+        #check move legality for game
         if (not starting) and (not self.has_rolled):
             return False
-        r = self.board.place_structure(action.coords, self.cur_player, action.value, starting=starting)
+        if self.cur_player.rem_settlements <= 0:
+            return False
+            
+        r = self.board.place_settlement(action.node_idx, self.cur_player, starting)
         if not r:
             return False
-    
-        if action.value == 1:
-            if self.cur_player.rem_settlements <= 0:
-                return False
-            if not starting:
-                if not self.pay_cost(Game.SETTLEMENT_COST):
-                    return False
-            self.cur_player.rem_settlements -= 1
-            self.cur_player.n_settlements += 1
 
-        elif action.value == 2:
-            if self.cur_player.rem_cities <= 0:
-                return False
-            if not self.pay_cost(Game.CITY_COST):
-                return False
-            self.cur_player.rem_cities -= 1
-            self.cur_player.n_settlements -= 1
-            self.cur_player.n_cities += 1
-
-        port: Port = self.board.node_port_dict.get(Board.coords_hash(action.coords), None)
-        if port is not None:
-            if port.resource is None:
-                for res in Resource:
-                    self.cur_player.bank_trade_rates[res] = min(3, self.cur_player.bank_trade_rates[res])
-            else:
-                self.cur_player.bank_trade_rates[port.resource] = 2
+        self.log_info('built a settlement')
 
         self.check_victory()
+        return True
+    
+    def place_city(self, action: CityAction):
+        #check move legality for game
+        if not self.has_rolled:
+            return False
+        if self.cur_player.rem_cities <= 0:
+            return False
 
+        r = self.board.place_city(action.node_idx, self.cur_player)
+        if not r:
+            return False
+
+        self.log_info('built a city')
+
+        self.check_victory()
         return True
     
     def place_road(self, action: RoadAction, starting=False):
         if (not starting) and (not self.has_rolled):
             return False
+
         
-        if self.road_dev_count == 0 and not starting:
-            if not self.pay_cost(Game.ROAD_COST):
-                return False
-            
-        r = self.board.place_road(action.coords, self.cur_player)
+        r = self.board.place_road(action.edge_idx, self.cur_player, starting=starting)
         if not r:
             return False
         
         self.cur_player.rem_roads -= 1
-        if self.road_dev_count > 0:
-            self.road_dev_count -= 1
+        if self.cur_player.road_dev_count > 0:
+            self.cur_player.road_dev_count -= 1
+
+        self.log_info('built a road')
 
         self.check_longest_road(self.cur_player)
         return True
@@ -218,7 +204,7 @@ class Game:
             case DevType.monopoly:
                 self.action_queue.append(ActionType.monopoly)
             case DevType.road_build:
-                self.road_dev_count = 2
+                self.cur_player.road_dev_count = 2
 
                 self.action_queue.append(ActionType.road)
                 self.action_queue.append(ActionType.road)
@@ -241,6 +227,8 @@ class Game:
         dev_card = self.dev_cards.pop()
         self.cur_player.dev_cards[dev_card] += 1
         self.cur_player.dev_cards_cur_turn[dev_card] += 1
+
+        self.log_info('bought a dev card')
         self.check_victory()
         return True
         
@@ -250,6 +238,8 @@ class Game:
         
         self.has_rolled = True
         roll_n = self.get_roll_n()
+        
+        self.log_info(f'rolled a {roll_n}')
 
         if roll_n == 7:
             self.handle_discards()
@@ -265,6 +255,8 @@ class Game:
             if np.sum(list(player.resources.values())) >= 7:
                 self.action_queue.append(ActionType.discard)
                 self.to_discard.append(player)
+                
+                self.log_info(f'{player.name} must discard')
     
     def discard(self, action: DiscardAction):
         player = self.to_discard[0]
@@ -277,6 +269,7 @@ class Game:
         for resource in Resource:
             self.resources[resource] += action.resources[resource]
             player.resources[resource] -= action.resources[resource]
+            self.log_info(f'{player.name} discarded {action.resources[resource]} {resource.value}')
             
         return True
 
@@ -301,26 +294,33 @@ class Game:
                 if len(gen_players[resource]) == 1:
                     player = gen_players[resource][0]
                     #give all that remains
+
+                    self.log_info(f'{player.name} got {self.resources[resource]} {resource.value}')
+
                     player.resources[resource] += self.resources[resource]
                     self.resources[resource] = 0
             else:
                 for player in gen_players[resource]:
                     gen = player.resources_gen[roll_n][resource] - player.resources_block[roll_n][resource]
+
+                    self.log_info(f'{player.name} got {gen} {resource.value}')
+
                     player.resources[resource] += gen
                     self.resources[resource] -= gen
 
             
     def move_robber(self, action: MoveRobberAction):
-        r = self.board.move_robber(action.coords)
+        r = self.board.move_robber(action.tile_idx)
         if not r:
             return False
         
+        self.log_info('moved the robber')
+
         robber_tile = self.board.robber_tile
         n_steal = 0
         player = None
         candidates = set()
-        for node_idx in Board.tile_node_list[robber_tile.index]:
-            node = self.board.nodes[node_idx]
+        for node in robber_tile.adj_nodes:
             #must have a player and must not be self
             if node.player and node.player != self.cur_player:
                 #and must have at least 1 resource
@@ -341,13 +341,12 @@ class Game:
         #recalculate blocked resources
         for player in self.players:
             player.reset_resource_block()
-        
+
         if robber_tile.resource is None:
             #nothing blocked if robber is on desert
             return True
 
-        for node_idx in Board.tile_node_list[robber_tile.index]:
-            node = self.board.nodes[node_idx]
+        for node in robber_tile.adj_nodes:
             if node.player:
                 node.player.resources_block[robber_tile.number][robber_tile.resource] += node.value
 
@@ -361,17 +360,18 @@ class Game:
             return False
         
         robber_tile = self.board.robber_tile
-        for node_idx in Board.tile_node_list[robber_tile.index]:
-            node = self.board.nodes[node_idx]
+        for node in robber_tile.adj_nodes:
             if node.player == action.player:
                 if np.any(node.player.resources.values()):
                     resource_arr = np.array(list(node.player.resources.values()))
                     total = np.sum(resource_arr)
 
-                    stolen = self.random.choice(list(node.player.resources.keys()), p=resource_arr / total)
+                    stolen: Resource = self.random.choice(list(node.player.resources.keys()), p=resource_arr / total)
 
                     node.player.resources[stolen] -= 1
                     self.cur_player.resources[stolen] += 1
+
+                    self.log_info(f'{self.cur_player.name} stole {stolen.value} from {action.player.name}')
 
                     return True
                 else:
@@ -392,6 +392,8 @@ class Game:
                 self.cur_player.resources[action.resource] += player.resources[action.resource]
                 player.resources[action.resource] = 0
 
+        self.log_info(f'{self.cur_player.name} monopolized {action.resource.value}')
+
         return True
     
     def invention(self, action: InventionAction):
@@ -406,7 +408,8 @@ class Game:
         for resource in Resource:
             self.cur_player.resources[resource] += action.resources[resource]
             self.resources[resource] -= action.resources[resource]
-        
+            self.log_info(f'{self.cur_player.name} got {action.resources[resource]} {resource.value} from invention')
+
         return True
 
 
@@ -438,23 +441,16 @@ class Game:
             amt = max(n_tradeable[resource], total_for - total_in)
             total_in += amt
             self.cur_player.resources[resource] -= amt
+
+            self.log_info(f'{self.cur_player.name} gave bank {amt} {resource.value}')
+
             if total_in >= total_for:
                 break
     
         for resource in Resource:
             self.cur_player.resources[resource] += action.trade_for[resource]
+            self.log_info(f'{self.cur_player.name} took {action.trade_for[resource]} {resource.value} from bank')
         
-        return True
-
-    def pay_cost(self, cost: dict[Resource, int]):
-        for resource in Resource:
-            if self.cur_player.resources[resource] < cost[resource]:
-                return False
-                
-        for resource in Resource:
-            self.cur_player.resources[resource] -= cost[resource]
-            self.resources[resource] += cost[resource]
-
         return True
     
     def check_longest_road(self, player: Player):
@@ -474,8 +470,6 @@ class Game:
         
         if flag:
             self.check_victory()
-        
-
     
     def check_largest_army(self):
         flag = False
@@ -498,12 +492,12 @@ class Game:
         for player in self.players:
             player.calculate_victory_points()
             if player.victory_points >= 10:
+                self.log_info(f'{player.name} was won')
                 self.victory_callback()
                 return True
         return False
     
     def advance_player(self, increment=1):
-        self.road_dev_count = 0
         self.has_rolled = False
         self.has_played_dev = False
         self.played_knight = False
@@ -539,6 +533,7 @@ class Game:
         obj['expected_action'] = self.action_queue[0].value if len(self.action_queue) > 0 else None
         obj['board'] = self.board.to_json_obj()
         obj['players'] = {player.name: player.to_json_obj() for player in self.players}
+        obj['info'] = self.info
 
         return obj
     
