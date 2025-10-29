@@ -8,9 +8,9 @@ class Player:
         self.name = name
         self.index = index
 
-        self.available_roads = np.zeros((72,), dtype=np.bool_)
-        self.available_settlements = np.zeros((54,), dtype=np.bool_)
-        self.available_cities = np.zeros((54,), dtype=np.bool_)
+        self.available_roads = np.zeros((72,), dtype=np.int8)
+        self.available_settlements = np.zeros((54,), dtype=np.int8)
+        self.available_cities = np.zeros((54,), dtype=np.int8)
 
         self.bank_trade_rates = dict()
         self.resources: dict[Resource, int] = dict()

@@ -1,10 +1,5 @@
 from gymnasium import spaces
-import gymnasium as gym
 import numpy as np
+x = spaces.MultiDiscrete([10, 10])
 
-s = spaces.Dict({
-    'a': spaces.Discrete(2),
-    'b': spaces.Discrete(2)
-})
-
-print(s.dtype)
+x.sample((np.array([1, 1, 1, 1, 1, 0, 0, 0, 0,0], dtype=np.int8), None))

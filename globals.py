@@ -54,5 +54,7 @@ DEV_TYPES_LIST = [
     DevType.monopoly,
     DevType.road_build,
     DevType.invention,
+
+    #needs to be last, see get_action_mask() in game.py
     DevType.victory_point
 ]
