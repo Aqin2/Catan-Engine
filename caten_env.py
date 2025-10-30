@@ -5,6 +5,7 @@ from game import Game
 import numpy as np
 from actions import *
 from globals import RESOURCE_TYPES_LIST, DEV_TYPES_LIST
+from copy import deepcopy
 
 class CatanEnv(AECEnv):
     metadata = {
@@ -39,7 +40,7 @@ class CatanEnv(AECEnv):
                 'dev_cards_cur_turn': MultiDiscrete([15, 3, 3, 3, 6]),
                 'victory_points': Discrete(11),
                 'longest_road_len': Discrete(16),
-                'num_knights_played': Discrete(20), # technically infinite knights can be played but very unlikely for >= 20
+                'num_knights_played': Box(0, np.inf),
                 'has_longest_road': Discrete(2),
                 'has_largest_army': Discrete(2)
             }),
@@ -56,7 +57,7 @@ class CatanEnv(AECEnv):
                 'num_dev_cards': Discrete(26), # <<< replaces 'dev_cards' and 'dev_cards_cur_turn'
                 'victory_points': Discrete(11), # <<< victory points from dev cards not counted
                 'longest_road_len': Discrete(16),
-                'num_knights_played': Discrete(20),
+                'num_knights_played': Box(0, np.inf),
                 'has_longest_road': Discrete(2),
                 'has_largest_army': Discrete(2)
             })] * (self.num_agents - 1))
@@ -95,23 +96,49 @@ class CatanEnv(AECEnv):
         '''
         self._act_space = MultiDiscrete([len(ACTION_TYPES), 19, 72, 54, 54, 4, self.num_agents, 5] + [20] * 10)
 
-
     def seed(self, seed=None):
         self.game_seed = seed
 
-    def reset(self, seed = None, options = None): 
+    '''
+    seed: game seed
+    options:
+        record_history: record the game history. massive overhead (!!!) due to the sheer amount of deepcopy() calls
+
+    '''
+
+    def reset(self, seed=None, options=None): 
         self.seed(seed)
         
         self.game = Game(player_names=self.agents, seed=self.game_seed)
-        self.agent_selection = self.agents[self.game.cur_player_idx]
+        self.agent_selection = self.agents[0]
         self.terminations = {name: False for name in self.agents}
         self.truncations = {name: False for name in self.agents}
         self.infos = {name: {} for name in self.agents}
         self.rewards = {name: 0 for name in self.agents}
         self._cumulative_rewards = {name: 0 for name in self.agents}
 
+        if options is None:
+            options = {}
+
+        self.options = options
+
+        if self.options.get('record_history'):
+            self.game_history = [deepcopy(self.game)]
+
     def step(self, action):
-        self.game.step(self.get_action(action))
+        game_action = self.get_action(action)
+        self.game.step(game_action)
+
+        if self.options.get('record_history'):
+            self.game_history.append(deepcopy(self.game))
+
+        if self.game.winner:
+            for name in self.agents:
+                self.terminations[name] = True
+
+        self.agent_selection = self.game.get_cur_player().name
+        
+
         
     def observe(self, agent):
         return flatten(self._obs_space, self.game.get_obs(self.agents.index(agent)))
@@ -149,7 +176,7 @@ class CatanEnv(AECEnv):
             case ActionType.move_robber:
                 return action_class(action[1])
             case ActionType.steal:
-                player = self.possible_agents[action[6]]
+                player = self.game.players[action[6]]
                 return action_class(player)
             case ActionType.monopoly:
                 resource = RESOURCE_TYPES_LIST[action[7]]
@@ -161,6 +188,3 @@ class CatanEnv(AECEnv):
                 trade_in = dict(zip(RESOURCE_TYPES_LIST, action[13:]))
                 return action_class(trade_in)
 
-from pettingzoo.test import api_test
-
-api_test(CatanEnv(['a', 'b', 'c', 'd']))

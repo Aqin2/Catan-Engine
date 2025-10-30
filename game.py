@@ -33,13 +33,12 @@ class Game:
         Resource.wood: 1
     }
 
-    def __init__(self, player_names: list[str], seed=None, victory_callback=None, logging=False):
+    def __init__(self, player_names: list[str], seed=None, logging=False):
         self.player_names = player_names
         self.seed = seed
         if self.seed == None:
             self.seed = time.time_ns()
 
-        self.victory_callback = victory_callback
         self.random = np.random.default_rng(seed=self.seed)
        
         #start, prod, or action
@@ -51,7 +50,6 @@ class Game:
         #player info
         self.players = [Player(name, i) for i, name in enumerate(player_names)]
         self.cur_player = self.players[0]
-        self.cur_player_idx = 0
         self.board = Board(self.players, seed=self.seed)
 
         #current player info for current turn
@@ -59,9 +57,10 @@ class Game:
         self.has_rolled = False
         self.played_knight = False
 
-        #longest road, largest army
-        self.p_longest_road: Player = None
-        self.p_largest_army: Player = None
+        #longest road, largest army, winner
+        self.p_longest_road: Player | None = None
+        self.p_largest_army: Player | None = None
+        self.winner: Player | None = None
 
         #game resources and dev cards
         self.resources = dict()
@@ -167,7 +166,8 @@ class Game:
         if not r:
             return False
         
-        self.cur_player.pay_cost(Game.SETTLEMENT_COST)
+        if not starting:
+            self.pay_cost(self.cur_player, Game.SETTLEMENT_COST)
 
         self.log_info('built a settlement')
 
@@ -193,7 +193,7 @@ class Game:
         if not r:
             return False
         
-        self.cur_player.pay_cost(Game.CITY_COST)
+        self.pay_cost(self.cur_player, Game.CITY_COST)
 
         self.log_info('built a city')
 
@@ -212,7 +212,7 @@ class Game:
     def place_road(self, action: RoadAction, starting=False):
         if not self.can_place_road(starting=starting):
             return False
-        
+    
         r = self.board.place_road(action.edge_idx, self.cur_player, starting=starting)
         if not r:
             return False
@@ -220,8 +220,8 @@ class Game:
         self.cur_player.rem_roads -= 1
         if self.cur_player.road_dev_count > 0:
             self.cur_player.road_dev_count -= 1
-        else:
-            self.cur_player.pay_cost(Game.ROAD_COST)
+        elif not starting:
+            self.pay_cost(self.cur_player, Game.ROAD_COST)
 
         self.log_info('built a road')
 
@@ -229,13 +229,17 @@ class Game:
         return True
     
     def can_place_road(self, starting=False):
-        if (not starting) and (not self.has_rolled):
-            return False
         if self.cur_player.rem_roads <= 0:
             return False
-        if not starting and self.cur_player.road_dev_count <= 0:
-            if not self.cur_player.can_afford(Game.ROAD_COST):
-                return False
+        
+        if self.cur_player.road_dev_count <= 0:
+            if not starting:
+                if not self.has_rolled:
+                    return False
+                if not self.cur_player.can_afford(Game.ROAD_COST):
+                    return False
+   
+        
         return True
 
     def play_dev(self, action: PlayDevAction):
@@ -253,10 +257,11 @@ class Game:
             case DevType.monopoly:
                 self.action_queue.append(ActionType.monopoly)
             case DevType.road_build:
-                self.cur_player.road_dev_count = 2
+                self.cur_player.road_dev_count = min(2, self.cur_player.rem_roads)
+                
+                for _ in range(self.cur_player.road_dev_count):
+                    self.action_queue.append(ActionType.road)
 
-                self.action_queue.append(ActionType.road)
-                self.action_queue.append(ActionType.road)
             case DevType.invention:
                 self.action_queue.append(ActionType.invention)
             case _:
@@ -275,6 +280,8 @@ class Game:
         dev_card = self.dev_cards.pop()
         self.cur_player.dev_cards[dev_card] += 1
         self.cur_player.dev_cards_cur_turn[dev_card] += 1
+
+        self.pay_cost(self.cur_player, Game.DEV_CARD_COST)
 
         self.log_info('bought a dev card')
         self.check_victory()
@@ -309,7 +316,7 @@ class Game:
         return not self.has_rolled
     
     def handle_discards(self):
-        idx = self.cur_player_idx
+        idx = self.cur_player.index
         for i in range(idx, idx + len(self.players)):
             player = self.players[i % len(self.players)]
             if np.sum(list(player.resources.values())) >= 7:
@@ -317,23 +324,27 @@ class Game:
                 self.to_discard.append(player)
                 
                 self.log_info(f'{player.name} must discard')
+        
     
     def discard(self, action: DiscardAction):
+        if len(self.action_queue) > 0:
+            if self.action_queue[0] != ActionType.discard:
+                return False
+        else:
+            return False
+
         player = self.to_discard[0]
         if np.sum(list(action.resources.values())) < np.sum(list(player.resources.values())) // 2:
             return False
-        for resource in Resource:
-            if action.resources[resource] > player.resources[resource]:
-                return False
         
-        for resource in Resource:
-            self.resources[resource] += action.resources[resource]
-            player.resources[resource] -= action.resources[resource]
-            self.log_info(f'{player.name} discarded {action.resources[resource]} {resource.value}')
-            
+        if not player.can_afford(action.resources):
+            return False
+        
+        self.pay_cost(player, action.resources)
+        self.to_discard.popleft()
+
         return True
 
-    
     def gen_resources(self, roll_n):
         total_gen = dict()
         gen_players: dict[str, list[Player]] = dict()
@@ -419,14 +430,14 @@ class Game:
         #cant steal from yourself
         if action.player == self.cur_player:
             return False
-        
+    
+
         robber_tile = self.board.robber_tile
         for node in robber_tile.adj_nodes:
             if node.player == action.player:
-                if np.any(node.player.resources.values()):
+                if np.any(list(node.player.resources.values())):
                     resource_arr = np.array(list(node.player.resources.values()))
                     total = np.sum(resource_arr)
-
                     stolen: Resource = self.random.choice(list(node.player.resources.keys()), p=resource_arr / total)
 
                     node.player.resources[stolen] -= 1
@@ -520,6 +531,12 @@ class Game:
     def can_player_trade(self):
         return self.has_rolled
     
+    def pay_cost(self, player: Player, cost: dict[Resource, int]):
+        player.pay_cost(cost)
+
+        for resource in Resource:
+            self.resources[resource] += cost.get(resource, 0)
+    
     def check_longest_road(self, player: Player):
         self.board.check_longest_road(player)
         
@@ -560,7 +577,7 @@ class Game:
             player.calculate_victory_points()
             if player.victory_points >= 10:
                 self.log_info(f'{player.name} was won')
-                self.victory_callback()
+                self.winner = player
                 return True
         return False
     
@@ -571,9 +588,10 @@ class Game:
         for dev_type in DevType:
             self.cur_player.dev_cards_cur_turn[dev_type] = 0
 
-        self.cur_player_idx += increment
-        self.cur_player_idx %= len(self.players)
-        self.cur_player = self.players[self.cur_player_idx]
+        idx = self.cur_player.index
+        idx += 1
+        idx %= len(self.players)
+        self.cur_player = self.players[idx]
 
     def get_roll_n(self):
         return self.random.choice([i for i in range(2, 13)], p=Game.roll_p)
@@ -613,9 +631,16 @@ class Game:
         obs['opponents'] = tuple(opponent_obs)
         return obs
     
+    def get_cur_player(self):
+        if len(self.to_discard) > 0:
+            return self.to_discard[0]
+        return self.cur_player
+
     #get the action mask for the current player
     #the other players obviously cant do anything
     def get_action_mask(self):
+        cur_player = self.get_cur_player()
+
         action_type_mask = np.zeros(len(ACTION_TYPES), dtype=np.int8)
         if len(self.action_queue) == 0:
             action_type_mask[0] = self.can_end_turn()
@@ -634,18 +659,18 @@ class Game:
         move_robber_mask = np.ones(19, dtype=np.int8)
         move_robber_mask[self.board.robber_tile.index] = False
 
-        road_mask = self.cur_player.available_roads.copy()
-        settlement_mask = self.cur_player.available_settlements.copy()
+        road_mask = cur_player.available_roads.copy()
+        settlement_mask = cur_player.available_settlements.copy()
         if self.starting:
             for i, node in enumerate(self.board.nodes):
                 settlement_mask[i] = node.available
-        city_mask = self.cur_player.available_cities.copy()
+        city_mask = cur_player.available_cities.copy()
 
         dev_card_mask = np.zeros(4, dtype=np.int8)
         for i, dev_type in enumerate(DevType):
             if dev_type == DevType.victory_point:
                 break
-            dev_card_mask[i] = (self.cur_player.dev_cards[dev_type] - self.cur_player.dev_cards_cur_turn[dev_type]) > 0
+            dev_card_mask[i] = (cur_player.dev_cards[dev_type] - cur_player.dev_cards_cur_turn[dev_type]) > 0
 
         steal_mask = np.zeros(len(self.players), dtype=np.int8)
         for player in self.get_steal_candidates():
@@ -653,20 +678,20 @@ class Game:
 
         monopoly_mask = np.zeros(5, dtype=np.int8)
         for i, res in enumerate(Resource):
-            monopoly_mask[i] = self.resources[res] + self.cur_player.resources[res] < 19
+            monopoly_mask[i] = self.resources[res] + cur_player.resources[res] < 19
 
         #due to the complicated check for trading a good mask (in mask guarantees legality) cant be generated
         #instead only disallow stupid turbo illegal moves
+
+        #no trade_for mask, you can technically be very greedy and player trade nothing for 19 of everything
+        trade_for_masks = [np.ones(20, dtype=np.int8)] * 5
 
         trade_in_masks = []
         for res in Resource:
             mask = np.zeros(20, dtype=np.int8)
             #cant only trade in what you have
-            mask[:self.cur_player.resources[res] + 1] = True
+            mask[:cur_player.resources[res] + 1] = True
             trade_in_masks.append(mask)
-
-        #no trade_for mask, you can technically be very greedy and player trade nothing for 19 of everything
-        trade_for_masks = [np.ones(20, dtype=np.int8)] * 5
 
         return tuple([
             action_type_mask,
@@ -677,19 +702,4 @@ class Game:
             dev_card_mask,
             steal_mask,
             monopoly_mask
-        ] + trade_in_masks + trade_for_masks)
-
-
-
-
-            
-        
-
-
-
-
-
-
-
-        
-        
+        ] + trade_for_masks + trade_in_masks)

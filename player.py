@@ -52,13 +52,13 @@ class Player:
 
     def can_afford(self, cost: dict[Resource, int]):
         for resource in Resource:
-            if self.resources[resource] < cost[resource]:
+            if self.resources[resource] < cost.get(resource, 0):
                 return False
         return True
     
     def pay_cost(self, cost: dict[Resource, int]):
         for resource in Resource:
-            self.resources[resource] -= cost[resource]
+            self.resources[resource] -= cost.get(resource, 0)
 
     def reset_resource_block(self):
         for roll in range(2, 13):
@@ -118,7 +118,7 @@ class Player:
             obs['dev_cards_cur_turn'] = np.zeros((5), dtype=np.int32)
             for i, value in enumerate(self.dev_cards_cur_turn.values()):
                 obs['dev_cards_cur_turn'][i] = value
-            obs['victory_points'] = self.victory_points
+            obs['victory_points'] = min(self.victory_points, 10)
         else:
             obs['num_dev_cards'] = sum(self.dev_cards.values())
             obs['victory_points'] = self.victory_points - self.dev_cards[DevType.victory_point]
